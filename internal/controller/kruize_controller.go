@@ -23,7 +23,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	mydomainv1alpha1 "github.com/ncau/kruize-operator/api/v1alpha1"
+	mydomainv1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 )
 
 // KruizeReconciler reconciles a Kruize object

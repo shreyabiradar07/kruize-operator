@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/ncau/kruize-operator/test/utils"
+	"github.com/kruize/kruize-operator/test/utils"
 )
 
 const namespace = "kruize-operator-system"

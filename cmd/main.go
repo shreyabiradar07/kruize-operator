@@ -34,8 +34,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	mydomainv1alpha1 "github.com/ncau/kruize-operator/api/v1alpha1"
-	"github.com/ncau/kruize-operator/internal/controller"
+	mydomainv1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
+	"github.com/kruize/kruize-operator/internal/controller"
 	//+kubebuilder:scaffold:imports
 )
 

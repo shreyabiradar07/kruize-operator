@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	mydomainv1alpha1 "github.com/ncau/kruize-operator/api/v1alpha1"
+	mydomainv1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 )
 
 var _ = Describe("Kruize Controller", func() {

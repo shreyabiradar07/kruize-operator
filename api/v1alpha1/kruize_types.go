@@ -44,11 +44,11 @@ type KruizeStatus struct {
 
 // Kruize is the Schema for the kruizes API
 type Kruize struct {
-    metav1.TypeMeta   `json:",inline"`
-    metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-    Spec   KruizeSpec   `json:"spec,omitempty"`
-    Status KruizeStatus `json:"status,omitempty"`
+	Spec   KruizeSpec   `json:"spec,omitempty"`
+	Status KruizeStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true

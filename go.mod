@@ -1,4 +1,4 @@
-module github.com/ncau/kruize-operator
+module github.com/kruize/kruize-operator
 
 go 1.21
 
