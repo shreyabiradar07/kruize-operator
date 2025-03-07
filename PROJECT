@@ -9,7 +9,7 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: kruize-operator
-repo: github.com/ncau/kruize-operator
+repo: github.com/kruize/kruize-operator
 resources:
 - api:
     crdVersion: v1
@@ -17,6 +17,6 @@ resources:
   controller: true
   domain: my.domain
   kind: Kruize
-  path: github.com/ncau/kruize-operator/api/v1alpha1
+  path: github.com/kruize/kruize-operator/api/v1alpha1
   version: v1alpha1
 version: "3"
