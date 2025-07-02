@@ -1,8 +1,10 @@
 # kruize-operator
-// TODO(user): Add simple overview of use/purpose
+The kruize operator allows for easy deployment of the kruize project on both minikube and openshift. 
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+Deploying the kruize operator will allow you to adjust varius options for your project where kruize is deployed. For an example of running kruize and the operator see https://github.com/kruize/kruize-demos. You can change the YAML file (found in samples) to deploy with whatever options you wish. 
+
+If you wish to run the prepackaged bundle you will require both the latest version of the operator-sdk and olm. You can then use operator-sdk run bundle <bundle image> to deploy it. 
 
 ## Getting Started
 
