@@ -284,6 +284,7 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 	return nil
 }
 
+// TODO: clean up manifests to generate from files rather than strings
 func (r *KruizeReconciler) generateKruizeManifest(namespace string, clusterType string) string {
 	return fmt.Sprintf(`
 apiVersion: v1
