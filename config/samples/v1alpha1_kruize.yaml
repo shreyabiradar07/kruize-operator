@@ -6,3 +6,9 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: monitoring
 spec:
+  cluster_type: "minikube"
+  size: 3
+  Non_interactive: 1
+  Use_yaml_build: 0	
+  Autotune_configmaps: "autotune-configmaps"
+  Namespace: "test-operator"  

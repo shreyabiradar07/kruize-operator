@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.21 AS builder
+FROM golang:1.22 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -26,8 +26,14 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot
-WORKDIR /
+WORKDIR /app
+
+# Copy the manager binary
 COPY --from=builder /workspace/manager .
+
+# Copy the manifest files
+COPY autotune/ autotune/
+
 USER 65532:65532
 
-ENTRYPOINT ["/manager"]
+ENTRYPOINT ["/app/manager"]
