@@ -256,7 +256,7 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 
 	// Wait a bit for DB to initialize
 	fmt.Println("Waiting for database to initialize...")
-	time.Sleep(30 * time.Second)
+	time.Sleep(90 * time.Second)
 
 	// Deploy Kruize main component
 	kruizeManifest := r.generateKruizeManifest(namespace, clusterType)
@@ -347,6 +347,9 @@ spec:
 }
 
 func (r *KruizeReconciler) generateKruizeManifest(namespace string, clusterType string) string {
+	// Use "kubernetes" as cluster type since that's the only one supported by Java code
+	actualClusterType := "kubernetes"
+
 	return fmt.Sprintf(`
 apiVersion: v1
 kind: Namespace
@@ -367,7 +370,9 @@ data:
     monitoringagent=prometheus
     monitoringservice=prometheus
     savetodb=true
-    dbdriver=postgresql
+    dbdriver=org.postgresql.Driver
+    database_url=jdbc:postgresql://kruize-db-service:5432/kruizedb
+    hibernate_connection_url=jdbc:postgresql://kruize-db-service:5432/kruizedb
     hibernate_dialect=org.hibernate.dialect.PostgreSQLDialect
     hibernate_driver=org.postgresql.Driver
     hibernate_c3p0minsize=5
@@ -407,7 +412,7 @@ spec:
         ports:
         - containerPort: 8080
         env:
-        # Try multiple environment variable names that Kruize might expect
+        # Use "kubernetes" as cluster type (only supported value)
         - name: CLUSTER_TYPE
           value: "%s"
         - name: clustertype
@@ -416,40 +421,111 @@ spec:
           value: "%s"
         - name: KRUIZE_CLUSTER_TYPE
           value: "%s"
-        - name: LOGGING_LEVEL
-          value: "info"
-        - name: ROOT_LOGGING_LEVEL
-          value: "INFO"
-        - name: ENV_ROOT_LOGGING_LEVEL
-          value: "INFO"
-        - name: LOG_LEVEL
-          value: "INFO"
-        - name: JAVA_OPTS
-          value: "-Xms256m -Xmx512m -Dlog4j2.level=INFO -Droot.logging.level=INFO -Dclustertype=%s"
-        # Database configuration
-        - name: DB_DRIVER
-          value: "postgresql"
+          
+        # Database configuration - FIX THE JDBC URL CONSTRUCTION
+        # Set the database driver as JDBC prefix
         - name: database_driver
-          value: "postgresql"
+          value: "jdbc:postgresql://"  # Use JDBC prefix format
+        - name: dbdriver
+          value: "jdbc:postgresql://"  # Use JDBC prefix format
+        - name: hibernate_driver
+          value: "org.postgresql.Driver"  # Keep full class name for hibernate
+        - name: hibernate_dialect
+          value: "org.hibernate.dialect.PostgreSQLDialect"
+        # Set complete JDBC URLs with multiple variations
+        - name: database_url
+          value: "jdbc:postgresql://kruize-db-service:5432/kruizedb"
         - name: DB_URL
           value: "jdbc:postgresql://kruize-db-service:5432/kruizedb"
+        - name: hibernate_connection_url
+          value: "jdbc:postgresql://kruize-db-service:5432/kruizedb"
+        - name: HIBERNATE_CONNECTION_URL
+          value: "jdbc:postgresql://kruize-db-service:5432/kruizedb"
+        - name: JDBC_URL
+          value: "jdbc:postgresql://kruize-db-service:5432/kruizedb"
+        # Set database connection components separately
         - name: database_hostname
           value: "kruize-db-service"
         - name: database_port
           value: "5432"
         - name: database_name
           value: "kruizedb"
-        - name: DB_USERNAME
-          value: "kruize"
         - name: database_username
+          value: "kruize"
+        - name: database_password
+          value: "kruize123"
+        - name: database_sslmode
+          value: "disable"
+        - name: database_adminusername
+          value: "kruize"
+        - name: database_adminpassword
+          value: "kruize123"
+        
+        # Legacy database env vars (keep these too)
+        - name: DB_DRIVER
+          value: "org.postgresql.Driver"  # Use full class for legacy
+        - name: DB_USERNAME
           value: "kruize"
         - name: DB_PASSWORD
           value: "kruize123"
-        - name: database_password
-          value: "kruize123"
+          
+        # All other missing environment variables from logs
+        - name: monitoringendpoint
+          value: "http://prometheus:9090"
+        - name: emonly
+          value: "false"
+        - name: bulkresultslimit
+          value: "1000"
+        - name: deletepartitionsthreshold
+          value: "30"
+        - name: hibernate_c3p0minsize
+          value: "5"
+        - name: hibernate_c3p0maxsize
+          value: "20"
+        - name: hibernate_c3p0timeout
+          value: "300"
+        - name: hibernate_c3p0maxstatements
+          value: "50"
+        - name: hibernate_hbm2ddlauto
+          value: "update"
+        - name: hibernate_showsql
+          value: "false"
+        - name: recommendationsURL
+          value: ""
+        - name: experimentsURL
+          value: ""
+        - name: hibernate_timezone
+          value: "UTC"
+        - name: plots
+          value: "true"
+        - name: log_recommendation_metrics_level
+          value: "info"
+        - name: local
+          value: "false"
+        - name: logAllHttpReqAndResp
+          value: "false"
+        - name: bulkapilimit
+          value: "1000"
+        - name: bulkThreadPoolSize
+          value: "10"
+        - name: jobFilterToDB
+          value: "true"
+        - name: experimentNameFormat
+          value: "default"
+        - name: isROSEnabled
+          value: "false"
+        - name: datasource
+          value: "postgresql"
+        - name: metadataProfileFilePath
+          value: "/opt/app/config/metadata_profiles"
+        - name: metricProfileFilePath
+          value: "/opt/app/config/metric_profiles"
+        - name: isKafkaEnabled
+          value: "false"
+        
         # Kruize specific configuration
         - name: K8S_TYPE
-          value: "%s"
+          value: "openshift"
         - name: k8stype
           value: "openshift"
         - name: AUTH_TYPE
@@ -472,6 +548,19 @@ spec:
           value: "monitor"
         - name: autotunemode
           value: "monitor"
+        
+        # Logging configuration
+        - name: LOGGING_LEVEL
+          value: "info"
+        - name: ROOT_LOGGING_LEVEL
+          value: "INFO"
+        - name: ENV_ROOT_LOGGING_LEVEL
+          value: "INFO"
+        - name: LOG_LEVEL
+          value: "INFO"
+        
+        - name: JAVA_OPTS
+          value: "-Xms256m -Xmx512m -Dlog4j2.level=INFO -Droot.logging.level=INFO -Dclustertype=%s -Ddatabase.url=jdbc:postgresql://kruize-db-service:5432/kruizedb"
         resources:
           requests:
             memory: "256Mi"
@@ -516,11 +605,78 @@ spec:
     port: 8080
     targetPort: 8080
   type: ClusterIP
-`, namespace, namespace, clusterType, namespace, clusterType, clusterType, clusterType, clusterType, clusterType, clusterType, namespace)
+`, namespace, namespace, actualClusterType, namespace, actualClusterType, actualClusterType, actualClusterType, actualClusterType, actualClusterType, namespace)
 }
 
 func (r *KruizeReconciler) generateKruizeUIManifest(namespace string) string {
 	return fmt.Sprintf(`
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kruize-ui-nginx-config
+  namespace: %s
+data:
+  nginx.conf: |
+    events {
+        worker_connections 1024;
+    }
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
+        
+        upstream kruize_backend {
+            server kruize-service:8080;
+        }
+        
+        server {
+            listen 8080;
+            server_name localhost;
+            root /usr/share/nginx/html;
+            index index.html;
+            
+            # API proxy to Kruize backend
+            location /api/ {
+                proxy_pass http://kruize_backend/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                proxy_connect_timeout 30s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 30s;
+            }
+            
+            # Proxy health check
+            location /health {
+                proxy_pass http://kruize_backend/health;
+                proxy_set_header Host $host;
+            }
+            
+            # Proxy all Kruize API endpoints
+            location /listApplications {
+                proxy_pass http://kruize_backend/listApplications;
+                proxy_set_header Host $host;
+            }
+            
+            location /listExperiments {
+                proxy_pass http://kruize_backend/listExperiments;
+                proxy_set_header Host $host;
+            }
+            
+            # Serve static files for everything else
+            location / {
+                try_files $uri $uri/ /index.html;
+                add_header Cache-Control "no-cache, no-store, must-revalidate";
+                add_header Pragma "no-cache";
+                add_header Expires "0";
+            }
+            
+            # Enable gzip compression
+            gzip on;
+            gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+        }
+    }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -540,10 +696,6 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        # Let OpenShift assign user/group IDs automatically
-        # runAsUser: 101     # Remove this line
-        # runAsGroup: 101    # Remove this line  
-        # fsGroup: 101       # Remove this line
       containers:
       - name: kruize-ui
         image: quay.io/kruize/kruize-ui:latest
@@ -552,12 +704,15 @@ spec:
         env:
         - name: KRUIZE_API_URL
           value: "http://kruize-service:8080"
+        - name: REACT_APP_KRUIZE_API_URL
+          value: "http://kruize-service:8080"
+        - name: KRUIZE_UI_API_URL
+          value: "http://kruize-service:8080"
+        - name: API_URL
+          value: "http://kruize-service:8080"
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
-          # Let OpenShift assign user/group IDs automatically
-          # runAsUser: 101     # Remove this line
-          # runAsGroup: 101    # Remove this line
           capabilities:
             drop:
             - ALL
@@ -575,14 +730,21 @@ spec:
             path: /
             port: 8080
           initialDelaySeconds: 15
-          periodSeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         livenessProbe:
           httpGet:
             path: /
             port: 8080
           initialDelaySeconds: 30
-          periodSeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
         volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
         - name: nginx-cache
           mountPath: /var/cache/nginx
         - name: nginx-pid
@@ -590,6 +752,9 @@ spec:
         - name: nginx-tmp
           mountPath: /tmp
       volumes:
+      - name: nginx-config
+        configMap:
+          name: kruize-ui-nginx-config
       - name: nginx-cache
         emptyDir: {}
       - name: nginx-pid
@@ -610,7 +775,7 @@ spec:
     port: 3000
     targetPort: 8080
   type: ClusterIP
-`, namespace, namespace)
+`, namespace, namespace, namespace)
 }
 
 func (r *KruizeReconciler) generateKruizeDBManifest(namespace string) string {
