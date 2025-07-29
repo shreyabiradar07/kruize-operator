@@ -39,36 +39,36 @@ spec:
           spec:
             description: KruizeSpec defines the desired state of Kruize
             properties:
-              Autotune_configmaps:
+              autotune_configmaps:
                 type: string
-              Namespace:
-                type: string
-              Non_interactive:
-                format: int32
-                type: integer
-              Use_yaml_build:
-                format: int32
-                type: integer
               autotune_ui_version:
                 type: string
               autotune_version:
                 type: string
               cluster_type:
                 type: string
+              namespace:
+                type: string
+              non_interactive:
+                format: int32
+                type: integer
               size:
                 description: Foo is an example field of Kruize. Edit kruize_types.go
                   to remove/update
                 format: int32
                 type: integer
+              use_yaml_build:
+                format: int32
+                type: integer
             required:
-            - Autotune_configmaps
-            - Namespace
-            - Non_interactive
-            - Use_yaml_build
+            - autotune_configmaps
             - autotune_ui_version
             - autotune_version
             - cluster_type
+            - namespace
+            - non_interactive
             - size
+            - use_yaml_build
             type: object
           status:
             description: KruizeStatus defines the observed state of Kruize

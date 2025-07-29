@@ -33,10 +33,10 @@ type KruizeSpec struct {
 	Cluster_type        string `json:"cluster_type"`
 	Autotune_version    string `json:"autotune_version"`
 	Autotune_ui_version string `json:"autotune_ui_version"`
-	Autotune_configmaps string `json:"Autotune_configmaps"`
-	Non_interactive     int32  `json:"Non_interactive"`
-	Use_yaml_build      int32  `json:"Use_yaml_build"`
-	Namespace           string `json:"Namespace"`
+	Autotune_configmaps string `json:"autotune_configmaps"`
+	Non_interactive     int32  `json:"non_interactive"`
+	Use_yaml_build      int32  `json:"use_yaml_build"`
+	Namespace           string `json:"namespace"`
 }
 
 // KruizeStatus defines the observed state of Kruize

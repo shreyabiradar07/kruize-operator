@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -40,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	mydomainv1alpha1 "github.com/ncau/kruize-operator/api/v1alpha1"
+	mydomainv1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -76,6 +75,10 @@ type KruizeReconciler struct {
 //+kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=get;list;watch;create;update;patch;delete;use
+//+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=my.domain,resources=kruizes,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=my.domain,resources=kruizes/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=my.domain,resources=kruizes/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -210,27 +213,15 @@ func (r *KruizeReconciler) checkKruizePodsStatus(ctx context.Context, namespace 
 	return readyCount, len(kruizePods), podStatus, nil
 }
 
-// Add this function to filter for Kruize-specific pods
-func (r *KruizeReconciler) filterKruizePods(allPods []string) []string {
-	var kruizePods []string
-
-	// Look for pods that contain kruize-related names
-	kruizeKeywords := []string{"kruize", "autotune", "kruize-ui", "kruize-db"}
-
-	for _, pod := range allPods {
-		for _, keyword := range kruizeKeywords {
-			if strings.Contains(strings.ToLower(pod), keyword) {
-				kruizePods = append(kruizePods, pod)
-				fmt.Printf("Found Kruize-related pod: %s\n", pod)
-				break
-			}
-		}
-	}
-
-	return kruizePods
-}
-
 func (r *KruizeReconciler) deployKruize(ctx context.Context, kruize *mydomainv1alpha1.Kruize) error {
+	// Add debug output
+	fmt.Printf("=== DEBUG: Kruize Spec Fields ===\n")
+	fmt.Printf("Cluster_type: '%s'\n", kruize.Spec.Cluster_type)
+	fmt.Printf("Namespace: '%s'\n", kruize.Spec.Namespace)
+	fmt.Printf("Size: %d\n", kruize.Spec.Size)
+	fmt.Printf("Autotune_version: '%s'\n", kruize.Spec.Autotune_version)
+	fmt.Printf("=== END DEBUG ===\n")
+
 	cluster_type := kruize.Spec.Cluster_type
 	fmt.Println("Deploying Kruize for cluster type:", cluster_type)
 
@@ -284,7 +275,77 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 	return nil
 }
 
-// TODO: clean up manifests to generate from files rather than strings
+func (r *KruizeReconciler) installKruizeCRDs(ctx context.Context) error {
+	crdManifest := r.generateKruizeCRDManifest()
+	return r.applyYAMLString(ctx, crdManifest, "")
+}
+
+func (r *KruizeReconciler) generateKruizeCRDManifest() string {
+	return `
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: kruizes.my.domain
+spec:
+  group: my.domain
+  names:
+    kind: Kruize
+    listKind: KruizeList
+    plural: kruizes
+    singular: kruize
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: Kruize is the Schema for the kruizes API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation of an object.'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this object represents.'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: KruizeSpec defines the desired state of Kruize
+            properties:
+              autotune_configmaps:
+                type: string
+              autotune_ui_version:
+                type: string
+              autotune_version:
+                type: string
+              cluster_type:
+                type: string
+              namespace:
+                type: string
+              non_interactive:
+                format: int32
+                type: integer
+              size:
+                format: int32
+                type: integer
+              use_yaml_build:
+                format: int32
+                type: integer
+            required:
+            - cluster_type
+            type: object
+          status:
+            description: KruizeStatus defines the observed state of Kruize
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+`
+}
+
 func (r *KruizeReconciler) generateKruizeManifest(namespace string, clusterType string) string {
 	return fmt.Sprintf(`
 apiVersion: v1
@@ -346,7 +407,14 @@ spec:
         ports:
         - containerPort: 8080
         env:
+        # Try multiple environment variable names that Kruize might expect
         - name: CLUSTER_TYPE
+          value: "%s"
+        - name: clustertype
+          value: "%s"
+        - name: cluster_type
+          value: "%s"
+        - name: KRUIZE_CLUSTER_TYPE
           value: "%s"
         - name: LOGGING_LEVEL
           value: "info"
@@ -357,28 +425,52 @@ spec:
         - name: LOG_LEVEL
           value: "INFO"
         - name: JAVA_OPTS
-          value: "-Xms256m -Xmx512m -Dlog4j2.level=INFO -Droot.logging.level=INFO"
+          value: "-Xms256m -Xmx512m -Dlog4j2.level=INFO -Droot.logging.level=INFO -Dclustertype=%s"
         # Database configuration
         - name: DB_DRIVER
           value: "postgresql"
+        - name: database_driver
+          value: "postgresql"
         - name: DB_URL
           value: "jdbc:postgresql://kruize-db-service:5432/kruizedb"
+        - name: database_hostname
+          value: "kruize-db-service"
+        - name: database_port
+          value: "5432"
+        - name: database_name
+          value: "kruizedb"
         - name: DB_USERNAME
           value: "kruize"
+        - name: database_username
+          value: "kruize"
         - name: DB_PASSWORD
+          value: "kruize123"
+        - name: database_password
           value: "kruize123"
         # Kruize specific configuration
         - name: K8S_TYPE
           value: "%s"
+        - name: k8stype
+          value: "openshift"
         - name: AUTH_TYPE
+          value: "bearer"
+        - name: authtype
           value: "bearer"
         - name: MONITORING_AGENT
           value: "prometheus"
+        - name: monitoringagent
+          value: "prometheus"
         - name: MONITORING_SERVICE
+          value: "prometheus"
+        - name: monitoringservice
           value: "prometheus"
         - name: SAVE_TO_DB
           value: "true"
+        - name: savetodb
+          value: "true"
         - name: AUTOTUNE_MODE
+          value: "monitor"
+        - name: autotunemode
           value: "monitor"
         resources:
           requests:
@@ -424,7 +516,7 @@ spec:
     port: 8080
     targetPort: 8080
   type: ClusterIP
-`, namespace, namespace, clusterType, namespace, clusterType, clusterType, namespace)
+`, namespace, namespace, clusterType, namespace, clusterType, clusterType, clusterType, clusterType, clusterType, clusterType, namespace)
 }
 
 func (r *KruizeReconciler) generateKruizeUIManifest(namespace string) string {
@@ -448,9 +540,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101
-        runAsGroup: 101
-        fsGroup: 101
+        # Let OpenShift assign user/group IDs automatically
+        # runAsUser: 101     # Remove this line
+        # runAsGroup: 101    # Remove this line  
+        # fsGroup: 101       # Remove this line
       containers:
       - name: kruize-ui
         image: quay.io/kruize/kruize-ui:latest
@@ -462,8 +555,9 @@ spec:
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
-          runAsUser: 101
-          runAsGroup: 101
+          # Let OpenShift assign user/group IDs automatically
+          # runAsUser: 101     # Remove this line
+          # runAsGroup: 101    # Remove this line
           capabilities:
             drop:
             - ALL
@@ -554,12 +648,11 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 999
-        runAsGroup: 999
-        fsGroup: 999
+        # Remove fsGroup or use OpenShift compatible values
+        # fsGroup: 999  # Remove this line
       containers:
       - name: kruize-db
-        image: postgres:13
+        image: quay.io/kruizehub/postgres:15.2
         ports:
         - containerPort: 5432
         env:
@@ -574,8 +667,9 @@ spec:
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
-          runAsUser: 999
-          runAsGroup: 999
+          # Remove runAsUser or let OpenShift assign it
+          # runAsUser: 999  # Remove this line
+          # runAsGroup: 999  # Remove this line
           capabilities:
             drop:
             - ALL
@@ -695,23 +789,6 @@ func (r *KruizeReconciler) applyYAMLString(ctx context.Context, yamlContent stri
 	return nil
 }
 
-func (r *KruizeReconciler) getRunningPods(ctx context.Context, namespace string) ([]string, error) {
-	var podNames []string
-
-	podList := &corev1.PodList{}
-	err := r.Client.List(ctx, podList, client.InNamespace(namespace))
-	if err != nil {
-		return nil, fmt.Errorf("failed to list pods: %v", err)
-	}
-
-	for _, pod := range podList.Items {
-		podNames = append(podNames, pod.Name)
-		fmt.Printf("Pod name: %s\n", pod.Name)
-	}
-
-	return podNames, nil
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *KruizeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	fmt.Println("Setting up the controller with the Manager")
@@ -725,69 +802,6 @@ func RootDir() string {
 	_, b, _, _ := DirRuntime.Caller(0)
 	d := path.Join(path.Dir(b))
 	return filepath.Dir(d)
-}
-
-func (r *KruizeReconciler) applyYAMLFile(ctx context.Context, filePath string, namespace string) error {
-	yamlFile, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %v", filePath, err)
-	}
-
-	fmt.Printf("Applying manifest file: %s (size: %d bytes)\n", filePath, len(yamlFile))
-	docs := strings.Split(string(yamlFile), "---")
-
-	// Create namespace first if it doesn't exist
-	if namespace != "" {
-		err := r.ensureNamespace(ctx, namespace)
-		if err != nil {
-			fmt.Printf("Warning: failed to ensure namespace %s: %v\n", namespace, err)
-		}
-	}
-
-	var successCount, failCount int
-
-	for i, doc := range docs {
-		if strings.TrimSpace(doc) == "" {
-			continue
-		}
-
-		obj := &unstructured.Unstructured{}
-		dec := yaml.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
-		_, _, err := dec.Decode([]byte(doc), nil, obj)
-		if err != nil {
-			fmt.Printf("Warning: failed to decode YAML document %d: %v\n", i, err)
-			failCount++
-			continue
-		}
-
-		// Handle namespace setting
-		objNamespace := obj.GetNamespace()
-		if objNamespace == "" && namespace != "" && !r.isClusterScopedResource(obj.GetKind()) {
-			obj.SetNamespace(namespace)
-		}
-
-		// Apply security context fixes for Pod Security Standards
-		if obj.GetKind() == "Deployment" || obj.GetKind() == "StatefulSet" {
-			r.applySecurityContext(obj)
-		}
-
-		// Apply the object
-		err = r.Client.Patch(ctx, obj, client.Apply, &client.PatchOptions{
-			FieldManager: "kruize-operator",
-			Force:        &[]bool{true}[0],
-		})
-
-		if err != nil {
-			fmt.Printf("Warning: failed to apply %s/%s: %v\n", obj.GetKind(), obj.GetName(), err)
-			failCount++
-		} else {
-			fmt.Printf("Successfully applied %s/%s\n", obj.GetKind(), obj.GetName())
-			successCount++
-		}
-	}
-
-	fmt.Printf("Applied %d resources successfully, %d failed\n", successCount, failCount)
-	return nil
 }
 
 func (r *KruizeReconciler) ensureNamespace(ctx context.Context, name string) error {
@@ -819,73 +833,7 @@ func (r *KruizeReconciler) isClusterScopedResource(kind string) bool {
 
 // TODO: this is a fix to RBAC but need to identify if this is the correct way to do it
 func (r *KruizeReconciler) applySecurityContext(obj *unstructured.Unstructured) {
-	// Get the spec.template.spec path
-	spec, found, err := unstructured.NestedMap(obj.Object, "spec", "template", "spec")
-	if !found || err != nil {
-		return
-	}
-
-	// Apply pod-level security context
-	podSecurityContext := map[string]interface{}{
-		"runAsNonRoot": true,
-		"runAsUser":    int64(65534),
-		"fsGroup":      int64(65534),
-		"seccompProfile": map[string]interface{}{
-			"type": "RuntimeDefault",
-		},
-	}
-
-	err = unstructured.SetNestedMap(spec, podSecurityContext, "securityContext")
-	if err != nil {
-		fmt.Printf("Warning: failed to set pod security context: %v\n", err)
-	}
-
-	// Define security context for containers
-	containerSecurityContext := map[string]interface{}{
-		"allowPrivilegeEscalation": false,
-		"runAsNonRoot":             true,
-		"runAsUser":                int64(65534),
-		"capabilities": map[string]interface{}{
-			"drop": []interface{}{"ALL"},
-		},
-		"seccompProfile": map[string]interface{}{
-			"type": "RuntimeDefault",
-		},
-	}
-
-	// Apply to regular containers
-	containers, found, err := unstructured.NestedSlice(spec, "containers")
-	if found && err == nil {
-		for i, container := range containers {
-			if containerMap, ok := container.(map[string]interface{}); ok {
-				containerMap["securityContext"] = containerSecurityContext
-				containers[i] = containerMap
-			}
-		}
-		err = unstructured.SetNestedSlice(spec, containers, "containers")
-		if err != nil {
-			fmt.Printf("Warning: failed to set container security contexts: %v\n", err)
-		}
-	}
-
-	// Apply to init containers as well
-	initContainers, found, err := unstructured.NestedSlice(spec, "initContainers")
-	if found && err == nil {
-		for i, container := range initContainers {
-			if containerMap, ok := container.(map[string]interface{}); ok {
-				containerMap["securityContext"] = containerSecurityContext
-				initContainers[i] = containerMap
-			}
-		}
-		err = unstructured.SetNestedSlice(spec, initContainers, "initContainers")
-		if err != nil {
-			fmt.Printf("Warning: failed to set init container security contexts: %v\n", err)
-		}
-	}
-
-	// Update the object
-	err = unstructured.SetNestedMap(obj.Object, spec, "spec", "template", "spec")
-	if err != nil {
-		fmt.Printf("Warning: failed to update object spec: %v\n", err)
-	}
+	// Skip security context application for OpenShift - let it handle user assignment
+	fmt.Printf("Skipping security context override for OpenShift compatibility\n")
+	return
 }
