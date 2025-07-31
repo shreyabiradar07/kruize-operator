@@ -10,7 +10,7 @@ spec:
   size: 3
   autotune_version: "0.2"
   autotune_ui_version: "0.0.9"
-  Non_interactive: 1
-  Use_yaml_build: 0	
-  Autotune_configmaps: "autotune-configmaps"
-  Namespace: "Namespace"
+  non_interactive: 1
+  use_yaml_build: 0	
+  autotune_configmaps: "autotune-configmaps"
+  namespace: "openshift-tuning"

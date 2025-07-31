@@ -13,4 +13,4 @@ spec:
   non_interactive: 1
   use_yaml_build: 0	
   autotune_configmaps: "autotune-configmaps"
-  namespace: "test-operator"
+  namespace: "openshift-tuning"

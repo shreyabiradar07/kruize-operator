@@ -121,7 +121,7 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	case "minikube":
 		targetNamespace = "monitoring"
 	default:
-		targetNamespace = "test-operator"
+		targetNamespace = "openshift-tuning"
 	}
 
 	// Wait for Kruize pods to be ready
