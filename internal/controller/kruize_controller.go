@@ -265,14 +265,66 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 		return fmt.Errorf("failed to deploy Kruize main component: %v", err)
 	}
 
-	// Deploy Kruize UI last
+	// Deploy Kruize UI
 	kruizeUIManifest := r.generateKruizeUIManifest(namespace)
 	err = r.applyYAMLString(ctx, kruizeUIManifest, namespace)
 	if err != nil {
 		return fmt.Errorf("failed to deploy Kruize UI: %v", err)
 	}
 
+	// Deploy OpenShift routes if on OpenShift
+	if clusterType == "openshift" {
+		routesManifest := r.generateKruizeRoutesManifest(namespace)
+		err = r.applyYAMLString(ctx, routesManifest, namespace)
+		if err != nil {
+			return fmt.Errorf("failed to deploy Kruize routes: %v", err)
+		}
+	}
+
 	return nil
+}
+
+// Add this new function to generate OpenShift routes
+func (r *KruizeReconciler) generateKruizeRoutesManifest(namespace string) string {
+	return fmt.Sprintf(`
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kruize
+  namespace: %s
+  labels:
+    app: kruize
+spec:
+  to:
+    kind: Service
+    name: kruize-service
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kruize-ui
+  namespace: %s
+  labels:
+    app: kruize-ui
+spec:
+  to:
+    kind: Service
+    name: kruize-ui-service
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+`, namespace, namespace)
 }
 
 func (r *KruizeReconciler) installKruizeCRDs(ctx context.Context) error {
