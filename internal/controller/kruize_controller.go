@@ -252,29 +252,29 @@ func (r *KruizeReconciler) deployKruize(ctx context.Context, kruize *mydomainv1a
 }
 
 func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace string, clusterType string) error {
-	// Deploy Kruize DB first
+	// Deploy Kruize DB (using emptyDir to avoid OpenShift permission issues)
 	kruizeDBManifest := r.generateKruizeDBManifest(namespace)
 	err := r.applyYAMLString(ctx, kruizeDBManifest, namespace)
 	if err != nil {
 		return fmt.Errorf("failed to deploy Kruize DB: %v", err)
 	}
 
-	// Wait a bit for DB to initialize
+	// Wait for DB to initialize
 	fmt.Println("Waiting for database to initialize...")
 	time.Sleep(90 * time.Second)
 
-	// Deploy RBAC and ConfigMap first (separate from Deployment)
+	// Deploy RBAC and ConfigMap
 	rbacAndConfigManifest := r.generateKruizeRBACAndConfigManifest(namespace, clusterType)
 	err = r.applyYAMLString(ctx, rbacAndConfigManifest, namespace)
 	if err != nil {
 		return fmt.Errorf("failed to deploy Kruize RBAC and Config: %v", err)
 	}
 
-	// Wait for ConfigMap to be created
+	// Wait for ConfigMap
 	fmt.Println("Waiting for ConfigMap to be created...")
 	time.Sleep(10 * time.Second)
 
-	// Deploy Kruize main component (Deployment only)
+	// Deploy Kruize main component
 	kruizeDeploymentManifest := r.generateKruizeDeploymentManifest(namespace)
 	err = r.applyYAMLString(ctx, kruizeDeploymentManifest, namespace)
 	if err != nil {
@@ -1028,37 +1028,51 @@ spec:
         - name: kruize-db
           image: quay.io/kruizehub/postgres:15.2
           imagePullPolicy: IfNotPresent
-          securityContext:
-            allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            capabilities:
-              drop:
-              - ALL
-            seccompProfile:
-              type: RuntimeDefault
           env:
             - name: POSTGRES_PASSWORD
               value: kruize123
-            - name: POSTGRES_USER
+            - name: POSTGRES_USER  
               value: kruize
             - name: POSTGRES_DB
               value: kruizedb
+            - name: POSTGRES_INITDB_ARGS
+              value: "--auth-host=md5"
             - name: PGDATA
               value: /tmp/pgdata
           resources:
             requests:
-              memory: "100Mi"
+              memory: "200Mi"
               cpu: "100m"
             limits:
-              memory: "256Mi"
+              memory: "512Mi"
               cpu: "500m"
           ports:
             - containerPort: 5432
           volumeMounts:
-            - name: kruize-db-storage
+            - name: postgres-storage
               mountPath: /tmp
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U kruize -d kruizedb
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U kruize -d kruizedb
+            initialDelaySeconds: 45
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
       volumes:
-        - name: kruize-db-storage
+        - name: postgres-storage
           emptyDir: {}
 ---
 apiVersion: v1
