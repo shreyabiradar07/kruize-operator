@@ -270,9 +270,9 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 		return fmt.Errorf("failed to deploy Kruize RBAC and Config: %v", err)
 	}
 
-	// Wait for ConfigMap
-	fmt.Println("Waiting for ConfigMap to be created...")
-	time.Sleep(10 * time.Second)
+	// Wait for RBAC to propagate
+	fmt.Println("Waiting for RBAC to propagate...")
+	time.Sleep(30 * time.Second)
 
 	// Deploy Kruize main component
 	kruizeDeploymentManifest := r.generateKruizeDeploymentManifest(namespace)
@@ -363,6 +363,32 @@ roleRef:
   name: cluster-monitoring-view
   apiGroup: rbac.authorization.k8s.io
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kruize-prometheus-reader
+subjects:
+  - kind: ServiceAccount
+    name: kruize-sa
+    namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kruize-system-reader
+subjects:
+  - kind: ServiceAccount
+    name: kruize-sa
+    namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: system:monitoring
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -417,7 +443,7 @@ data:
           "provider": "prometheus",
           "serviceName": "prometheus-k8s",
           "namespace": "openshift-monitoring",
-          "url": "https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9091",
+          "url": "https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9090",
           "authentication": {
               "type": "bearer",
               "credentials": {
@@ -741,7 +767,7 @@ data:
     "provider": "prometheus",
     "serviceName": "prometheus-k8s",
     "namespace": "openshift-monitoring",
-    "url": "https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9091",
+    "url": "https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9090",
     "authentication": {
         "type": "bearer",
         "credentials": {
