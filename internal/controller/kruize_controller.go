@@ -84,6 +84,15 @@ type KruizeReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses/api,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=alertmanagers,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=metrics.k8s.io,resources=pods,verbs=get;list;watch
+//+kubebuilder:rbac:groups=metrics.k8s.io,resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=autoscaling.k8s.io,resources=verticalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -319,7 +328,7 @@ metadata:
   name: kruize-recommendation-updater
 rules:
   - apiGroups: [""]
-    resources: ["pods", "nodes", "namespaces"]
+    resources: ["pods", "nodes", "namespaces", "services", "endpoints"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
@@ -336,6 +345,15 @@ rules:
   - apiGroups: ["metrics.k8s.io"]
     resources: ["pods", "nodes"]
     verbs: ["get", "list"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheuses", "alertmanagers", "servicemonitors"]
+    verbs: ["get", "list", "watch"]
+    resourceNames: ["*"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheuses/api"]
+    verbs: ["get", "create", "update"]
+  - nonResourceURLs: ["/metrics", "/api/v1/label/*", "/api/v1/query*", "/api/v1/series*", "/api/v1/targets*"]
+    verbs: ["get"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -387,6 +405,30 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: system:monitoring
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kruize-monitoring-access
+rules:
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheuses", "prometheuses/api", "alertmanagers", "servicemonitors", "prometheusrules"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - nonResourceURLs: ["/api/v1/*", "/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kruize-monitoring-access-crb
+subjects:
+  - kind: ServiceAccount
+    name: kruize-sa
+    namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: kruize-monitoring-access
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: v1
@@ -453,7 +495,7 @@ data:
         }
       ]
     }
-`, namespace, namespace, namespace, namespace, namespace, namespace, namespace)
+`, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace)
 }
 
 func (r *KruizeReconciler) generateKruizeDeploymentManifest(namespace string) string {
@@ -713,6 +755,30 @@ roleRef:
   name: cluster-monitoring-view
   apiGroup: rbac.authorization.k8s.io
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kruize-monitoring-access
+rules:
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["prometheuses", "prometheuses/api", "alertmanagers", "servicemonitors", "prometheusrules"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - nonResourceURLs: ["/api/v1/*", "/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kruize-monitoring-access-crb
+subjects:
+  - kind: ServiceAccount
+    name: kruize-sa
+    namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: kruize-monitoring-access
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -857,7 +923,7 @@ spec:
     port: 8080
     targetPort: 8080
   type: ClusterIP
-`, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace)
+`, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace)
 }
 
 func (r *KruizeReconciler) generateKruizeUIManifest(namespace string) string {
