@@ -483,9 +483,8 @@ data:
         {
           "name": "prometheus-1",
           "provider": "prometheus",
-          "serviceName": "prometheus-k8s",
           "namespace": "openshift-monitoring",
-          "url": "https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9090",
+          "url": "https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9091",
           "authentication": {
               "type": "bearer",
               "credentials": {
@@ -599,20 +598,19 @@ spec:
     weight: 100
   port:
     targetPort: http
-  # Remove TLS configuration for HTTP-only access
   wildcardPolicy: None
 ---
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: kruize-ui
+  name: kruize-ui-nginx-service
   namespace: %s
   labels:
     app: kruize-ui-nginx
 spec:
   to:
     kind: Service
-    name: kruize-ui-service
+    name: kruize-ui-nginx
     weight: 100
   port:
     targetPort: http
@@ -689,241 +687,6 @@ spec:
     subresources:
       status: {}
 `
-}
-
-func (r *KruizeReconciler) generateKruizeManifest(namespace string, clusterType string) string {
-
-	return fmt.Sprintf(`
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: %s
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: kruize-sa
-  namespace: %s
----
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: kruize-recommendation-updater
-rules:
-  - apiGroups: [""]
-    resources: ["pods", "nodes", "namespaces"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["extensions", "networking.k8s.io"]
-    resources: ["ingresses"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["autoscaling"]
-    resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["autoscaling.k8s.io"]
-    resources: ["verticalpodautoscalers"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["metrics.k8s.io"]
-    resources: ["pods", "nodes"]
-    verbs: ["get", "list"]
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: kruize-recommendation-updater-crb
-subjects:
-  - kind: ServiceAccount
-    name: kruize-sa
-    namespace: %s
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kruize-recommendation-updater
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kruize-monitoring-view
-subjects:
-  - kind: ServiceAccount
-    name: kruize-sa
-    namespace: %s
-roleRef:
-  kind: ClusterRole
-  name: cluster-monitoring-view
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kruize-monitoring-access
-rules:
-  - apiGroups: ["monitoring.coreos.com"]
-    resources: ["prometheuses", "prometheuses/api", "alertmanagers", "servicemonitors", "prometheusrules"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - nonResourceURLs: ["/api/v1/*", "/metrics"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kruize-monitoring-access-crb
-subjects:
-  - kind: ServiceAccount
-    name: kruize-sa
-    namespace: %s
-roleRef:
-  kind: ClusterRole
-  name: kruize-monitoring-access
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kruizeconfig
-  namespace: %s
-data:
-  dbconfigjson: |
-    {
-      "database": {
-        "adminPassword": "kruize123",
-        "adminUsername": "kruize",
-        "hostname": "kruize-db-service",
-        "name": "kruizedb",
-        "password": "kruize123",
-        "port": 5432,
-        "sslMode": "disable",
-        "username": "kruize"
-      }
-    }
-  kruizeconfigjson: |
-    {
-      "clustertype": "kubernetes",
-      "k8stype": "openshift",
-      "authtype": "",
-      "monitoringagent": "prometheus",
-      "monitoringservice": "prometheus-k8s",
-      "monitoringendpoint": "prometheus-k8s",
-      "savetodb": "true",
-      "dbdriver": "jdbc:postgresql://",
-      "plots": "true",
-      "local": "true",
-      "logAllHttpReqAndResp": "true",
-      "recommendationsURL" : "http://kruize-service.%s.svc.cluster.local:8080/generateRecommendations?experiment_name=%%s",
-      "experimentsURL" : "http://kruize-service.%s.svc.cluster.local:8080/createExperiment",
-      "experimentNameFormat" : "%%datasource%%|%%clustername%%|%%namespace%%|%%workloadname%%(%%workloadtype%%)|%%containername%%",
-      "bulkapilimit" : 1000,
-      "isKafkaEnabled" : "false",
-      "hibernate": {
-        "dialect": "org.hibernate.dialect.PostgreSQLDialect",
-        "driver": "org.postgresql.Driver",
-        "c3p0minsize": 5,
-        "c3p0maxsize": 10,
-        "c3p0timeout": 300,
-        "c3p0maxstatements": 100,
-        "hbm2ddlauto": "update",
-        "showsql": "false",
-        "timezone": "UTC"
-      },
-"datasource": [
-  {
-    "name": "prometheus-1",
-    "provider": "prometheus",
-    "serviceName": "prometheus-k8s",
-    "namespace": "openshift-monitoring",
-    "url": "https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9090",
-    "authentication": {
-        "type": "bearer",
-        "credentials": {
-          "tokenFilePath": "/var/run/secrets/kubernetes.io/serviceaccount/token"
-        }
-    }
-  }
-]
-    }
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: kruize
-  namespace: %s
-  labels:
-    app: kruize
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: kruize
-  template:
-    metadata:
-      labels:
-        app: kruize
-    spec:
-      serviceAccountName: kruize-sa
-      automountServiceAccountToken: true
-      containers:
-      - name: kruize
-        image: quay.io/kruize/autotune_operator:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: LOGGING_LEVEL
-          value: "info"
-        - name: ROOT_LOGGING_LEVEL
-          value: "error"
-        - name: DB_CONFIG_FILE
-          value: "/etc/config/dbconfigjson"
-        - name: KRUIZE_CONFIG_FILE
-          value: "/etc/config/kruizeconfigjson"
-        - name: JAVA_TOOL_OPTIONS
-          value: "-XX:MaxRAMPercentage=80"
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "250m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        volumeMounts:
-        - name: config-volume
-          mountPath: /etc/config
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 45
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 90
-          periodSeconds: 20
-          timeoutSeconds: 5
-          failureThreshold: 3
-      volumes:
-      - name: config-volume
-        configMap:
-          name: kruizeconfig
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: kruize-service
-  namespace: %s
-spec:
-  selector:
-    app: kruize
-  ports:
-  - name: http
-    port: 8080
-    targetPort: 8080
-  type: ClusterIP
-`, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace, namespace)
 }
 
 func (r *KruizeReconciler) generateKruizeUIManifest(namespace string) string {
