@@ -19,6 +19,7 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -117,6 +118,83 @@ var _ = Describe("controller", Ordered, func() {
 			}
 			EventuallyWithOffset(1, verifyControllerUp, time.Minute, time.Second).Should(Succeed())
 
+		})
+
+		It("should deploy Kruize components successfully", func() {
+			By("creating a Kruize custom resource")
+			cmd := exec.Command("kubectl", "apply", "-f", "config/samples/my_v1alpha1_kruize.yaml")
+			_, err := utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+
+			By("checking that openshift-tuning namespace is created")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "namespace", "openshift-tuning")
+				_, err := utils.Run(cmd)
+				return err
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("checking that Kruize ServiceAccount is created")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "serviceaccount", "kruize-sa", "-n", "openshift-tuning")
+				_, err := utils.Run(cmd)
+				return err
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("checking that ConfigMap contains correct datasource")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "configmap", "kruizeconfig", "-n", "openshift-tuning", "-o", "jsonpath={.data.kruizeconfigjson}")
+				output, err := utils.Run(cmd)
+				if err != nil {
+					return err
+				}
+				if !strings.Contains(string(output), "prometheus-1") {
+					return fmt.Errorf("datasource not found in config")
+				}
+				if !strings.Contains(string(output), ":9091") {
+					return fmt.Errorf("correct port not found in config")
+				}
+				if strings.Contains(string(output), "serviceName") {
+					return fmt.Errorf("serviceName should not be present in datasource config")
+				}
+				return nil
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
+			By("checking that Kruize deployment is ready")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "deployment", "kruize", "-n", "openshift-tuning", "-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				if err != nil {
+					return err
+				}
+				if string(output) != "1" {
+					return fmt.Errorf("deployment not ready")
+				}
+				return nil
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("checking that Kruize database is ready")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "deployment", "kruize-db", "-n", "openshift-tuning", "-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				if err != nil {
+					return err
+				}
+				if string(output) != "1" {
+					return fmt.Errorf("database deployment not ready")
+				}
+				return nil
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("verifying Kruize API is responding")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "exec", "deployment/kruize", "-n", "openshift-tuning", "--", "curl", "-s", "localhost:8080/health")
+				_, err := utils.Run(cmd)
+				return err
+			}, 3*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("cleaning up the Kruize custom resource")
+			cmd = exec.Command("kubectl", "delete", "-f", "config/samples/my_v1alpha1_kruize.yaml")
+			_, _ = utils.Run(cmd)
 		})
 	})
 })

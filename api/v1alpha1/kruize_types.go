@@ -29,7 +29,14 @@ type KruizeSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of Kruize. Edit kruize_types.go to remove/update
-	Size int32 `json:"size"`
+	Size                int32  `json:"size"`
+	Cluster_type        string `json:"cluster_type"`
+	Autotune_version    string `json:"autotune_version"`
+	Autotune_ui_version string `json:"autotune_ui_version"`
+	Autotune_configmaps string `json:"autotune_configmaps"`
+	Non_interactive     int32  `json:"non_interactive"`
+	Use_yaml_build      int32  `json:"use_yaml_build"`
+	Namespace           string `json:"namespace"`
 }
 
 // KruizeStatus defines the observed state of Kruize
@@ -39,10 +46,9 @@ type KruizeStatus struct {
 	Nodes []string `json:"nodes"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-
 // Kruize is the Schema for the kruizes API
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 type Kruize struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
