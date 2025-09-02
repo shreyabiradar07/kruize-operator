@@ -637,14 +637,14 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: kruize-ui-nginx-service
+  name: kruize-ui-nginx-service  # Changed back to kruize-ui-nginx-service
   namespace: %s
   labels:
-    app: kruize-ui-nginx
+    app: kruize-ui-nginx  # Changed back to kruize-ui-nginx
 spec:
   to:
     kind: Service
-    name: kruize-ui-nginx
+    name: kruize-ui-nginx-service  # Changed from kruize-ui-service to kruize-ui-nginx-service
     weight: 100
   port:
     targetPort: http
@@ -880,7 +880,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: kruize-ui-service
+  name: kruize-ui-nginx-service
   namespace: %s
 spec:
   selector:
