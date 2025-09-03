@@ -637,7 +637,7 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: kruize-ui-nginx 
+  name: kruize-ui-nginx-service
   namespace: %s
   labels:
     app: kruize-ui-nginx
@@ -650,72 +650,6 @@ spec:
     targetPort: http
   wildcardPolicy: None
 `, namespace, namespace)
-}
-
-func (r *KruizeReconciler) generateKruizeCRDManifest() string {
-	return `
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  annotations:
-    controller-gen.kubebuilder.io/version: v0.17.3
-  name: kruizes.my.domain
-spec:
-  group: my.domain
-  names:
-    kind: Kruize
-    listKind: KruizeList
-    plural: kruizes
-    singular: kruize
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: Kruize is the Schema for the kruizes API
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation of an object.'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this object represents.'
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: KruizeSpec defines the desired state of Kruize
-            properties:
-              autotune_configmaps:
-                type: string
-              autotune_ui_version:
-                type: string
-              autotune_version:
-                type: string
-              cluster_type:
-                type: string
-              namespace:
-                type: string
-              non_interactive:
-                format: int32
-                type: integer
-              size:
-                format: int32
-                type: integer
-              use_yaml_build:
-                format: int32
-                type: integer
-            required:
-            - cluster_type
-            type: object
-          status:
-            description: KruizeStatus defines the observed state of Kruize
-            type: object
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
-`
 }
 
 func (r *KruizeReconciler) generateKruizeUIManifest(namespace string) string {
