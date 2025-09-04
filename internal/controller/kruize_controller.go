@@ -295,16 +295,16 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 		return nil
 	}
 
-       // Deploy RBAC and ConfigMap
-       rbacAndConfigManifest := r.generateKruizeRBACAndConfigManifest(namespace, clusterType)
-       err := r.applyYAMLString(ctx, rbacAndConfigManifest, namespace)
-       if err != nil {
-           return fmt.Errorf("failed to deploy Kruize RBAC and Config: %v", err)
-       }
+    // Deploy RBAC and ConfigMap
+    rbacAndConfigManifest := r.generateKruizeRBACAndConfigManifest(namespace, clusterType)
+    err := r.applyYAMLString(ctx, rbacAndConfigManifest, namespace)
+    if err != nil {
+        return fmt.Errorf("failed to deploy Kruize RBAC and Config: %v", err)
+    }
 
-       // Wait for RBAC to propagate
-       fmt.Println("Waiting for RBAC to propagate...")
-       time.Sleep(30 * time.Second)
+    // Wait for RBAC to propagate
+    fmt.Println("Waiting for RBAC to propagate...")
+    time.Sleep(30 * time.Second)
 
 	// Deploy Kruize DB (using emptyDir to avoid OpenShift permission issues)
 	kruizeDBManifest := r.generateKruizeDBManifest(namespace)
