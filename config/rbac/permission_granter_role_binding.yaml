@@ -4,12 +4,12 @@ metadata:
   labels:
     app.kubernetes.io/name: kruize-operator
     app.kubernetes.io/managed-by: kustomize
-  name: manager-rolebinding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: manager-role
+  name: permission-granter-binding
 subjects:
-- kind: ServiceAccount
-  name: controller-manager
-  namespace: kruize-operator-system
+  - kind: ServiceAccount
+    name: controller-manager
+    namespace: kruize-operator-system
+roleRef:
+  kind: ClusterRole
+  name: permission-granter
+  apiGroup: rbac.authorization.k8s.io
