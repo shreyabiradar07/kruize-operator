@@ -637,90 +637,19 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: kruize-ui-nginx-service  # Changed back to kruize-ui-nginx-service
+  name: kruize-ui-nginx-service
   namespace: %s
   labels:
-    app: kruize-ui-nginx  # Changed back to kruize-ui-nginx
+    app: kruize-ui-nginx
 spec:
   to:
     kind: Service
-    name: kruize-ui-nginx-service  # Changed from kruize-ui-service to kruize-ui-nginx-service
+    name: kruize-ui-nginx-service  
     weight: 100
   port:
     targetPort: http
   wildcardPolicy: None
 `, namespace, namespace)
-}
-
-func (r *KruizeReconciler) installKruizeCRDs(ctx context.Context) error {
-	crdManifest := r.generateKruizeCRDManifest()
-	return r.applyYAMLString(ctx, crdManifest, "")
-}
-
-func (r *KruizeReconciler) generateKruizeCRDManifest() string {
-	return `
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  annotations:
-    controller-gen.kubebuilder.io/version: v0.17.3
-  name: kruizes.my.domain
-spec:
-  group: my.domain
-  names:
-    kind: Kruize
-    listKind: KruizeList
-    plural: kruizes
-    singular: kruize
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: Kruize is the Schema for the kruizes API
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation of an object.'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this object represents.'
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: KruizeSpec defines the desired state of Kruize
-            properties:
-              autotune_configmaps:
-                type: string
-              autotune_ui_version:
-                type: string
-              autotune_version:
-                type: string
-              cluster_type:
-                type: string
-              namespace:
-                type: string
-              non_interactive:
-                format: int32
-                type: integer
-              size:
-                format: int32
-                type: integer
-              use_yaml_build:
-                format: int32
-                type: integer
-            required:
-            - cluster_type
-            type: object
-          status:
-            description: KruizeStatus defines the observed state of Kruize
-            type: object
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
-`
 }
 
 func (r *KruizeReconciler) generateKruizeUIManifest(namespace string) string {
@@ -1017,11 +946,6 @@ func (r *KruizeReconciler) applyYAMLString(ctx context.Context, yamlContent stri
 			obj.SetNamespace(namespace)
 		}
 
-		// Apply security context fixes for Pod Security Standards
-		if obj.GetKind() == "Deployment" || obj.GetKind() == "StatefulSet" {
-			r.applySecurityContext(obj)
-		}
-
 		// Apply the object
 		err = r.Client.Patch(ctx, obj, client.Apply, &client.PatchOptions{
 			FieldManager: "kruize-operator",
@@ -1081,11 +1005,4 @@ func (r *KruizeReconciler) isClusterScopedResource(kind string) bool {
 		}
 	}
 	return false
-}
-
-// TODO: this is a fix to RBAC but need to identify if this is the correct way to do it
-func (r *KruizeReconciler) applySecurityContext(obj *unstructured.Unstructured) {
-	// Skip security context application for OpenShift - let it handle user assignment
-	fmt.Printf("Skipping security context override for OpenShift compatibility\n")
-	return
 }
