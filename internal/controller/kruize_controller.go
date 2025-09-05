@@ -708,6 +708,13 @@ data:
                 proxy_set_header Host $host;
             }
             
+            location /dsmetadata {
+                proxy_pass http://kruize_backend/dsmetadata;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            }
+
             # Serve static files for everything else
             location / {
                 try_files $uri $uri/ /index.html;
