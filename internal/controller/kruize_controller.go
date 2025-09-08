@@ -555,7 +555,7 @@ spec:
       automountServiceAccountToken: true
       containers:
       - name: kruize
-        image: quay.io/kruize/autotune_operator:latest
+        image: quay.io/kruize/autotune_operator:0.7
         ports:
         - containerPort: 8080
         env:
