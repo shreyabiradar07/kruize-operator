@@ -743,7 +743,7 @@ spec:
         runAsNonRoot: true
       containers:
       - name: kruize-ui-nginx
-        image: quay.io/kruize/kruize-ui:latest
+        image: quay.io/kruize/kruize-ui:0.0.9
         ports:
         - containerPort: 8080
         env:
