@@ -510,7 +510,7 @@ data:
         "c3p0maxsize": 10,
         "c3p0timeout": 300,
         "c3p0maxstatements": 100,
-        "hbm2ddlauto": "update",
+        "hbm2ddlauto": "none",
         "showsql": "false",
         "timezone": "UTC"
       },
