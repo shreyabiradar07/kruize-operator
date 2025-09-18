@@ -43,6 +43,9 @@ import (
 	mydomainv1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
+    "k8s.io/apimachinery/pkg/util/wait"
+    "k8s.io/apimachinery/pkg/labels"
+    "k8s.io/apimachinery/pkg/selection"
 )
 
 // KruizeReconciler reconciles a Kruize object
@@ -139,8 +142,12 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		targetNamespace = "openshift-tuning"
 	}
 
+    labels := map[string][]string{
+        "app":  {"kruize", "kruize-ui-nginx", "kruize-db"},
+    }
+
 	// Wait for Kruize pods to be ready
-	err = r.waitForKruizePods(ctx, targetNamespace, 5*time.Minute)
+	err = r.waitForKruizePods(ctx, targetNamespace, labels, 5*time.Minute)
 	if err != nil {
 		logger.Error(err, "Kruize pods not ready yet")
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
@@ -156,46 +163,63 @@ func (r *KruizeReconciler) isTestMode() bool {
 	return testMode == "true" || testMode == "1"
 }
 
-func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace string, timeout time.Duration) error {
-	logger := log.FromContext(ctx)
+func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace string, labelsToMatch map[string][]string, timeout time.Duration) error {
 
-	// Skip pod waiting in test mode
-	if r.isTestMode() {
-		logger.Info("Test mode detected, skipping pod readiness check", "namespace", namespace)
-		return nil
-	}
+	selector := labels.NewSelector()
+    for key, values := range labelsToMatch {
+        var op selection.Operator
+        if len(values) == 1 {
+            op = selection.Equals
+        } else {
+            op = selection.In
+        }
 
-	requiredPods := []string{"kruize", "kruize-ui-nginx", "kruize-db"}
-	logger.Info("Waiting for Kruize pods to be ready", "namespace", namespace, "pods", requiredPods)
+        req, err := labels.NewRequirement(key, op, values)
+        if err != nil {
+            return err
+        }
+        selector = selector.Add(*req)
+    }
 
-	timeoutCh := time.After(timeout)
-	ticker := time.NewTicker(15 * time.Second)
-	defer ticker.Stop()
+    fmt.Printf("Starting to wait for Kruize pods with selector: \"%s\"\n", selector)
 
-	for {
-		select {
-		case <-timeoutCh:
-			return fmt.Errorf("timeout waiting for Kruize pods to be ready in namespace %s", namespace)
+    return wait.PollUntilContextTimeout(ctx, 5*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
+        opts := []client.ListOption{
+            client.InNamespace(namespace),
+            client.MatchingLabelsSelector{Selector: selector},
+        }
 
-		case <-ticker.C:
-			readyPods, totalPods, podStatus, err := r.checkKruizePodsStatus(ctx, namespace)
-			if err != nil {
-				logger.Error(err, "Failed to check pod status")
-				continue
-			}
+        podList := &corev1.PodList{}
+        if err := r.Client.List(ctx, podList, opts...); err != nil {
+            return false, err
+        }
 
-			logger.Info("Pod status check", "ready", readyPods, "total", totalPods, "namespace", namespace)
-			fmt.Printf("Pod status: %v\n", podStatus)
+        if len(podList.Items) == 0 {
+            return false, nil
+        }
 
-			// Check if we have all required pods running
-			if readyPods >= 3 && totalPods >= 3 {
-				logger.Info("All Kruize pods are ready", "readyPods", readyPods)
-				return nil
-			}
+        var readyPods int
+        for _, pod := range podList.Items {
+            if isPodReady(&pod) {
+                readyPods++
+            }
+        }
+        if readyPods == len(podList.Items) {
+            fmt.Printf("✅ Success! All %d pods are ready!\n", len(podList.Items))
+            return true, nil
+        }
+        fmt.Printf("Waiting for all pods to become ready (%d/%d)...\n", readyPods, len(podList.Items))
+        return false, nil
+    })
+}
 
-			logger.Info("Waiting for more pods to be ready", "ready", readyPods, "total", totalPods)
-		}
-	}
+func isPodReady(pod *corev1.Pod) bool {
+    for _, condition := range pod.Status.Conditions {
+       if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+          return true
+       }
+    }
+    return false
 }
 
 func (r *KruizeReconciler) checkKruizePodsStatus(ctx context.Context, namespace string) (int, int, map[string]string, error) {
