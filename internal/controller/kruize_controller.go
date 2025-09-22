@@ -150,7 +150,7 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	err = r.waitForKruizePods(ctx, targetNamespace, labels, 5*time.Minute)
 	if err != nil {
 		logger.Error(err, "Kruize pods not ready yet")
-		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		return ctrl.Result{}, err
 	}
 
 	logger.Info("All Kruize pods are ready!", "namespace", targetNamespace)
@@ -183,7 +183,7 @@ func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace stri
 
     fmt.Printf("Starting to wait for Kruize pods with selector: \"%s\"\n", selector)
 
-    return wait.PollUntilContextTimeout(ctx, 5*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
+    return wait.PollUntilContextTimeout(ctx, 10*time.Second, timeout, true, func(ctx context.Context) (bool, error) {
         opts := []client.ListOption{
             client.InNamespace(namespace),
             client.MatchingLabelsSelector{Selector: selector},
@@ -208,7 +208,7 @@ func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace stri
             fmt.Printf("✅ Success! All %d pods are ready!\n", len(podList.Items))
             return true, nil
         }
-        fmt.Printf("Waiting for all pods to become ready (%d/%d)...\n", readyPods, len(podList.Items))
+        fmt.Printf("Waiting for Kruize pods to become ready (%d/%d)...\n", readyPods, len(podList.Items))
         return false, nil
     })
 }
