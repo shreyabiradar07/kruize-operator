@@ -164,6 +164,13 @@ func (r *KruizeReconciler) isTestMode() bool {
 }
 
 func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace string, labelsToMatch map[string][]string, timeout time.Duration) error {
+  logger := log.FromContext(ctx)
+
+  // Skip pod waiting in test mode
+	if r.isTestMode() {
+		logger.Info("Test mode detected, skipping pod readiness check", "namespace", namespace)
+		return nil
+	}
 
 	selector := labels.NewSelector()
     for key, values := range labelsToMatch {
