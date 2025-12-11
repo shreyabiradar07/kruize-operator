@@ -7,7 +7,7 @@ metadata:
   name: permission-granter
 rules:
   - apiGroups: ["apps"]
-    resources: ["replicasets", "deamonsets"]
+    resources: ["replicasets", "daemonsets"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["autoscaling"]
     resources: ["horizontalpodautoscalers"]

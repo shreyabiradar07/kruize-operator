@@ -27,7 +27,7 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2025-12-10T10:18:46Z"
+    createdAt: "2025-12-11T14:17:22Z"
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
   name: kruize-operator.v0.0.2
@@ -363,7 +363,7 @@ spec:
           - apps
           resources:
           - replicasets
-          - deamonsets
+          - daemonsets
           verbs:
           - get
           - list
