@@ -47,7 +47,7 @@ spec:
       name: kruizes.my.domain
       version: v1alpha1
   description: |
-    Kruize is an resource optimization tool for Kubernetes workloads. It analyzes application performance metrics and provides right-sizing recommendations to optimize resource utilization, reduce costs, and improve application performance.
+    Kruize is a resource optimization tool for Kubernetes workloads. It analyzes application performance metrics and provides right-sizing recommendations to optimize resource utilization, reduce costs, and improve application performance.
     ## Prerequisites
     - Prometheus for metrics collection. If not already installed in your cluster, please install using your preferred method.
   displayName: Kruize Operator
