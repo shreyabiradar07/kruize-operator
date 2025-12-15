@@ -27,9 +27,14 @@ metadata:
         }
       ]
     capabilities: Basic Install
-    createdAt: "2025-12-11T14:17:22Z"
+    categories: Monitoring,Developer Tools
+    containerImage: quay.io/kruize/kruize-operator:0.0.2
+    createdAt: "2025-12-15T07:10:50Z"
+    description: Kruize provides resource optimization recommendations for Kubernetes
+      workloads
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
+    repository: https://github.com/kruize/kruize-operator
   name: kruize-operator.v0.0.2
   namespace: placeholder
 spec:
@@ -41,8 +46,11 @@ spec:
       kind: Kruize
       name: kruizes.my.domain
       version: v1alpha1
-  description: Resource optimization tool
-  displayName: kruize-operator.v0.0.2
+  description: |
+    Kruize is an resource optimization tool for Kubernetes workloads. It analyzes application performance metrics and provides right-sizing recommendations to optimize resource utilization, reduce costs, and improve application performance.
+    ## Prerequisites
+    - Prometheus for metrics collection. If not already installed in your cluster, please install using your preferred method.
+  displayName: Kruize Operator
   icon:
   - base64data: ""
     mediatype: ""
@@ -524,8 +532,16 @@ spec:
   - cost
   links:
   - name: Kruize Operator
-    url: https://kruize-operator.domain
+    url: https://github.com/kruize/kruize-operator
+  - name: Kruize
+    url: https://github.com/kruize/autotune
+  maintainers:
+  - email: dgunigun@ibm.com
+    name: Dinakar Guniguntala
+  - email: csubrama@ibm.com
+    name: Chandrakala Subramanyam
   maturity: alpha
+  minKubeVersion: 1.23.0
   provider:
     name: Kruize
   version: 0.0.2
