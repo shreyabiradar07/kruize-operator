@@ -270,14 +270,6 @@ spec:
         - apiGroups:
           - monitoring.coreos.com
           resources:
-          - prometheuses/api
-          verbs:
-          - create
-          - get
-          - update
-        - apiGroups:
-          - monitoring.coreos.com
-          resources:
           - prometheusrules
           verbs:
           - create
