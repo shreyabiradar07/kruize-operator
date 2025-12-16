@@ -12,7 +12,8 @@ metadata:
               "app.kubernetes.io/managed-by": "kustomize",
               "app.kubernetes.io/name": "kruize-operator"
             },
-            "name": "kruize-sample"
+            "name": "kruize-sample",
+            "namespace": "openshift-tuning"
           },
           "spec": {
             "autotune_configmaps": "autotune-configmaps",
@@ -29,7 +30,7 @@ metadata:
     capabilities: Basic Install
     categories: Monitoring,Developer Tools
     containerImage: quay.io/kruize/kruize-operator:0.0.2
-    createdAt: "2025-12-16T07:30:03Z"
+    createdAt: "2025-12-16T08:43:41Z"
     description: Resource optimization tool for Kubernetes workloads
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
