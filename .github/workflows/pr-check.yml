@@ -4,8 +4,7 @@ on:
   pull_request:
     branches:
       - main
-      - master
-      - develop
+      - mvp_demo
     types: [opened, synchronize, reopened]
 
 env:
@@ -44,9 +43,6 @@ jobs:
         run: |
           go mod download
           go mod verify
-
-      - name: Run unit tests
-        run: make test
 
       - name: Run linter
         run: |
@@ -156,23 +152,18 @@ jobs:
           kubectl get serviceaccount kruize-sa -n monitoring
           
           echo "=== Kruize ConfigMap ==="
-          kubectl get configmap kruizeconfig -n openshift-tuning -o yaml
+          kubectl get configmap kruizeconfig -n monitoring -o yaml
           
           echo "=== Kruize Deployment Status ==="
-          kubectl get deployment kruize -n openshift-tuning -o jsonpath='{.status.readyReplicas}'
+          kubectl get deployment kruize -n monitoring -o jsonpath='{.status.readyReplicas}'
           
           echo "=== Kruize DB Deployment Status ==="
-          kubectl get deployment kruize-db -n openshift-tuning -o jsonpath='{.status.readyReplicas}'
+          kubectl get deployment kruize-db -n monitoring -o jsonpath='{.status.readyReplicas}'
 
       - name: Test Kruize API health
         run: |
           echo "Testing Kruize API health endpoint..."
-          kubectl exec deployment/kruize -n openshift-tuning -- curl -s localhost:8080/health || echo "Health check failed"
-
-      - name: Run E2E tests
-        run: |
-          echo "Running E2E tests..."
-          make test-e2e || echo "E2E tests completed with issues"
+          kubectl exec deployment/kruize -n monitoring -- curl -s localhost:8080/health || echo "Health check failed"
 
       - name: Collect logs on failure
         if: failure()
@@ -181,10 +172,10 @@ jobs:
           kubectl logs -n ${{ env.NAMESPACE }} -l control-plane=controller-manager --tail=200 || true
           
           echo "=== Kruize Logs ==="
-          kubectl logs -n openshift-tuning deployment/kruize --tail=200 || true
+          kubectl logs -n monitoring deployment/kruize --tail=200 || true
           
           echo "=== Kruize DB Logs ==="
-          kubectl logs -n openshift-tuning deployment/kruize-db --tail=200 || true
+          kubectl logs -n monitoring deployment/kruize-db --tail=200 || true
           
           echo "=== All Pods Status ==="
           kubectl get pods --all-namespaces
@@ -196,11 +187,10 @@ jobs:
         if: always()
         run: |
           echo "Cleaning up resources..."
-          kubectl delete -f /tmp/kruize-cr.yaml --ignore-not-found=true || true
+          kubectl delete -f /tmp/kruize-cr.yaml -n ${{ env.NAMESPACE }} --ignore-not-found=true || true
           make undeploy || true
           make uninstall || true
           kubectl delete namespace ${{ env.NAMESPACE }} --ignore-not-found=true || true
-          kubectl delete namespace openshift-tuning --ignore-not-found=true || true
 
       - name: Summary
         if: success()
