@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: kruize-operator
     app.kubernetes.io/managed-by: kustomize
-  name: kruize-viewer-role
+  name: operator-kruize-viewer-role
 rules:
 - apiGroups:
   - kruize.io

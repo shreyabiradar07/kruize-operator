@@ -4,7 +4,7 @@ metadata:
   labels:
     app.kubernetes.io/name: kruize-operator
     app.kubernetes.io/managed-by: kustomize
-  name: metrics-reader
+  name: operator-metrics-reader
 rules:
 - nonResourceURLs:
   - "/metrics"

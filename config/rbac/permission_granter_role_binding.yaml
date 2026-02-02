@@ -4,14 +4,14 @@ metadata:
   labels:
     app.kubernetes.io/name: kruize-operator
     app.kubernetes.io/managed-by: kustomize
-  name: permission-granter-binding
+  name: operator-permission-granter-binding
 subjects:
   - kind: ServiceAccount
-    name: controller-manager
+    name: operator
     # namespace: system is a placeholder that kustomize automatically transforms
     # to the target namespace (monitoring, openshift-tuning, etc.) during build
     namespace: system
 roleRef:
   kind: ClusterRole
-  name: permission-granter
+  name: operator-permission-granter
   apiGroup: rbac.authorization.k8s.io

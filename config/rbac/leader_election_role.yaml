@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: kruize-operator
     app.kubernetes.io/managed-by: kustomize
-  name: leader-election-role
+  name: operator-leader-election-role
 rules:
 - apiGroups:
   - ""
