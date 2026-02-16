@@ -29,16 +29,19 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
+      - name: Install XML parsing tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends libxml2-utils
 
       - name: Fetch Kruize Autotune version from master branch
         id: fetch-autotune-version
         run: |
-          # Fetch the pom.xml from kruize/autotune master branch
-          KRUIZE_VERSION=$(curl -s https://raw.githubusercontent.com/kruize/autotune/master/pom.xml | grep -oP '<version>\K[^<]+' | head -1)
+          # Fetch the pom.xml from kruize/autotune master branch and extract /project/version
+          KRUIZE_VERSION=$(
+            curl -s https://raw.githubusercontent.com/kruize/autotune/master/pom.xml \
+            | xmllint --xpath 'string(/project/version)' - 2>/dev/null
+          )
           
           if [ -z "$KRUIZE_VERSION" ]; then
             echo "Failed to fetch Kruize Autotune version from pom.xml"
@@ -80,11 +83,15 @@ jobs:
               echo "Autotune image tag $KRUIZE_VERSION is available on quay.io"
             else
               echo "image_available=false" >> $GITHUB_OUTPUT
-              echo "Autotune image tag $KRUIZE_VERSION not found on quay.io"
+              echo "Autotune image tag $KRUIZE_VERSION not found on quay.io (HTTP 200, tag missing)"
             fi
+          elif [ "$HTTP_CODE" -eq 404 ]; then
+            echo "image_available=false" >> $GITHUB_OUTPUT
+            echo "Autotune image tag $KRUIZE_VERSION not found on quay.io (HTTP 404)"
           else
             echo "image_available=false" >> $GITHUB_OUTPUT
-            echo "Failed to check Autotune image availability (HTTP $HTTP_CODE)"
+            echo "Error checking Autotune image availability on quay.io (HTTP $HTTP_CODE)"
+            exit 1
           fi
 
       - name: Check Quay.io for UI image tag availability
