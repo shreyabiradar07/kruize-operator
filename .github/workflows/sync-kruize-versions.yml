@@ -65,58 +65,48 @@ jobs:
           echo "ui_version=$UI_VERSION" >> $GITHUB_OUTPUT
           echo "Fetched Kruize UI version: $UI_VERSION"
 
-      - name: Check Quay.io for Autotune image tag availability
-        id: check-autotune-image
+      - name: Check Quay.io image availability
+        id: check-images
         run: |
+          # Function to check if an image tag exists on Quay.io
+          check_quay_image() {
+            local REPOSITORY=$1
+            local TAG=$2
+            local IMAGE_NAME=$3
+            
+            IMAGE_URL="https://quay.io/api/v1/repository/${REPOSITORY}/tag/?specificTag=${TAG}"
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
+            
+            if [ "$HTTP_CODE" -eq 200 ]; then
+              TAG_EXISTS=$(curl -s "$IMAGE_URL" | jq -r '.tags | length')
+              if [ "$TAG_EXISTS" -gt 0 ]; then
+                echo "✓ ${IMAGE_NAME} image tag ${TAG} is available on quay.io"
+                return 0
+              else
+                echo "✗ ${IMAGE_NAME} image tag ${TAG} not found on quay.io (HTTP 200, tag missing)"
+                return 1
+              fi
+            else
+              echo "✗ Failed to check ${IMAGE_NAME} image availability (HTTP ${HTTP_CODE})"
+              return 1
+            fi
+          }
+          
+          # Check Autotune image
           KRUIZE_VERSION="${{ steps.fetch-autotune-version.outputs.kruize_version }}"
-          
-          # Check if the image tag exists on quay.io
-          IMAGE_URL="https://quay.io/api/v1/repository/kruize/autotune_operator/tag/?specificTag=${KRUIZE_VERSION}"
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
-          
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            # Check if the tag actually exists in the response
-            TAG_EXISTS=$(curl -s "$IMAGE_URL" | jq -r '.tags | length')
-            if [ "$TAG_EXISTS" -gt 0 ]; then
-              echo "image_available=true" >> $GITHUB_OUTPUT
-              echo "Autotune image tag $KRUIZE_VERSION is available on quay.io"
-            else
-              echo "image_available=false" >> $GITHUB_OUTPUT
-              echo "Autotune image tag $KRUIZE_VERSION not found on quay.io (HTTP 200, tag missing)"
-            fi
-          elif [ "$HTTP_CODE" -eq 404 ]; then
-            echo "image_available=false" >> $GITHUB_OUTPUT
-            echo "Autotune image tag $KRUIZE_VERSION not found on quay.io (HTTP 404)"
+          if check_quay_image "kruize/autotune_operator" "$KRUIZE_VERSION" "Autotune"; then
+            echo "autotune_available=true" >> $GITHUB_OUTPUT
           else
-            echo "image_available=false" >> $GITHUB_OUTPUT
-            echo "Error checking Autotune image availability on quay.io (HTTP $HTTP_CODE)"
-            exit 1
+            echo "autotune_available=false" >> $GITHUB_OUTPUT
           fi
-
-      - name: Check Quay.io for UI image tag availability
-        id: check-ui-image
-        run: |
+          
+          # Check UI image
           UI_VERSION="${{ steps.fetch-ui-version.outputs.ui_version }}"
-          
-          # Check if the image tag exists on quay.io
-          IMAGE_URL="https://quay.io/api/v1/repository/kruize/kruize-ui/tag/?specificTag=${UI_VERSION}"
-          
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
-          
-          if [ "$HTTP_CODE" -eq 200 ]; then
-            # Check if the tag actually exists in the response
-            TAG_EXISTS=$(curl -s "$IMAGE_URL" | jq -r '.tags | length')
-            if [ "$TAG_EXISTS" -gt 0 ]; then
-              echo "image_available=true" >> $GITHUB_OUTPUT
-              echo "UI image tag $UI_VERSION is available on quay.io"
-            else
-              echo "image_available=false" >> $GITHUB_OUTPUT
-              echo "UI image tag $UI_VERSION not found on quay.io"
-            fi
+          if check_quay_image "kruize/kruize-ui" "$UI_VERSION" "UI"; then
+            echo "ui_available=true" >> $GITHUB_OUTPUT
           else
-            echo "image_available=false" >> $GITHUB_OUTPUT
-            echo "Failed to check UI image availability (HTTP $HTTP_CODE)"
+            echo "ui_available=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Get current versions from constants
@@ -137,8 +127,8 @@ jobs:
           UI_VERSION="${{ steps.fetch-ui-version.outputs.ui_version }}"
           CURRENT_AUTOTUNE_VERSION="${{ steps.current-versions.outputs.current_autotune_version }}"
           CURRENT_UI_VERSION="${{ steps.current-versions.outputs.current_ui_version }}"
-          AUTOTUNE_IMAGE_AVAILABLE="${{ steps.check-autotune-image.outputs.image_available }}"
-          UI_IMAGE_AVAILABLE="${{ steps.check-ui-image.outputs.image_available }}"
+          AUTOTUNE_IMAGE_AVAILABLE="${{ steps.check-images.outputs.autotune_available }}"
+          UI_IMAGE_AVAILABLE="${{ steps.check-images.outputs.ui_available }}"
           
           NEEDS_AUTOTUNE_UPDATE=false
           NEEDS_UI_UPDATE=false
@@ -225,13 +215,13 @@ jobs:
           echo "### Autotune" >> $GITHUB_STEP_SUMMARY
           echo "- **Version (pom.xml):** ${{ steps.fetch-autotune-version.outputs.kruize_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Current Version (constants):** ${{ steps.current-versions.outputs.current_autotune_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image Available:** ${{ steps.check-autotune-image.outputs.image_available }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Available:** ${{ steps.check-images.outputs.autotune_available }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Update Needed:** ${{ steps.update-check.outputs.needs_autotune_update }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### UI" >> $GITHUB_STEP_SUMMARY
           echo "- **Version (package.json):** ${{ steps.fetch-ui-version.outputs.ui_version }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Current Version (constants):** ${{ steps.current-versions.outputs.current_ui_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image Available:** ${{ steps.check-ui-image.outputs.image_available }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Available:** ${{ steps.check-images.outputs.ui_available }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Update Needed:** ${{ steps.update-check.outputs.needs_ui_update }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Overall" >> $GITHUB_STEP_SUMMARY
