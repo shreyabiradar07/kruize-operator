@@ -9,7 +9,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write
 
 jobs:
   check-and-update:
@@ -29,10 +28,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Install XML parsing tools
+      - name: Install required tools
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends libxml2-utils
+          sudo apt-get install -y --no-install-recommends libxml2-utils jq
 
       - name: Fetch Kruize Autotune version from master branch
         id: fetch-autotune-version
