@@ -2,8 +2,8 @@ name: Sync Kruize Versions
 
 on:
   schedule:
-    # Run daily at 00:00 UTC
-    - cron: '0 0 * * *'
+    # Run weekly on Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
   workflow_dispatch: # Allow manual trigger
 
 permissions:
@@ -28,14 +28,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@v6
-        with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
-          passphrase: ${{ secrets.GPG_PASSPHRASE }}
-          git_user_signingkey: true
-          git_commit_gpgsign: true
-
       - name: Install required tools
         run: |
           sudo apt-get update -y
@@ -45,9 +37,10 @@ jobs:
         id: fetch-autotune-version
         run: |
           # Fetch the pom.xml from kruize/autotune master branch and extract /project/version
+          # Using local-name() to handle XML namespaces
           KRUIZE_VERSION=$(
             curl -s https://raw.githubusercontent.com/kruize/autotune/master/pom.xml \
-            | xmllint --xpath 'string(/project/version)' - 2>/dev/null
+            | xmllint --xpath '//*[local-name()="project"]/*[local-name()="version"]/text()' - 2>/dev/null
           )
           
           if [ -z "$KRUIZE_VERSION" ]; then
