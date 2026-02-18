@@ -28,6 +28,14 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          git_user_signingkey: true
+          git_commit_gpgsign: true
+
       - name: Install required tools
         run: |
           sudo apt-get update -y
@@ -186,10 +194,11 @@ jobs:
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ steps.generate-token.outputs.token }}
-          commit-message: "chore: update Kruize versions (Autotune: ${{ steps.fetch-autotune-version.outputs.kruize_version }}, UI: ${{ steps.fetch-ui-version.outputs.ui_version }})"
-          title: "chore: update Kruize image versions"
-          committer: GitHub Actions <actions@github.com>
-          author: GitHub Actions <actions@github.com>
+          commit-message: "build(deps): update Kruize versions to Autotune ${{ steps.fetch-autotune-version.outputs.kruize_version }} and UI ${{ steps.fetch-ui-version.outputs.ui_version }}"
+          title: "build(deps): update Kruize image versions"
+          committer: kruize-version-sync <${{ secrets.APP_ID }}+kruize-version-sync@users.noreply.github.com>
+          author: kruize-version-sync <${{ secrets.APP_ID }}+kruize-version-sync@users.noreply.github.com>
+          sign-commits: true
           body: |
             ## Automated Version Update
             
