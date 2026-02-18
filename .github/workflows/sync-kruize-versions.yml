@@ -189,9 +189,6 @@ jobs:
           token: ${{ steps.generate-token.outputs.token }}
           commit-message: "build(deps): update Kruize versions to Autotune ${{ steps.fetch-autotune-version.outputs.kruize_version }} and UI ${{ steps.fetch-ui-version.outputs.ui_version }}"
           title: "build(deps): update Kruize image versions"
-          committer: kruize-version-sync <${{ secrets.APP_ID }}+kruize-version-sync@users.noreply.github.com>
-          author: kruize-version-sync <${{ secrets.APP_ID }}+kruize-version-sync@users.noreply.github.com>
-          sign-commits: true
           body: |
             ## Automated Version Update
             
