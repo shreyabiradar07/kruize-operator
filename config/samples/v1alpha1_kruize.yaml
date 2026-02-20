@@ -12,3 +12,31 @@ spec:
   autotune_ui_image: "quay.io/kruize/kruize-ui:0.0.9"
   # For OpenShift, use: "openshift-tuning", Minikube/KIND, use: "monitoring"
   namespace: "openshift-tuning"
+  
+  # Optional: Resource configuration for Kruize components
+  # If not specified, default values will be used
+  resources:
+    # Database resource configuration
+    database:
+      cpuRequest: "0.5"
+      cpuLimit: "0.5"
+      memoryRequest: "100Mi"
+      memoryLimit: "100Mi"
+    
+    # Kruize application resource configuration
+    kruize:
+      cpuRequest: "0.7"
+      cpuLimit: "0.7"
+      memoryRequest: "768Mi"
+      memoryLimit: "768Mi"
+
+    # Persistent Volume configuration
+    persistentVolume:
+      # PV storage size (should be >= PVC storage size)
+      pvStorageSize: "500Mi"
+      # PVC storage size (if not specified, uses pvStorageSize)
+      pvcStorageSize: "500Mi"
+      storageClassName: "manual"
+      hostPath: "/mnt/data"
+      accessModes:
+        - "ReadWriteMany"

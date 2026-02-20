@@ -54,6 +54,67 @@ spec:
               namespace:
                 description: Target namespace for Kruize deployment
                 type: string
+              resources:
+                description: Resource configuration for Kruize components
+                properties:
+                  database:
+                    description: Database resource configuration
+                    properties:
+                      cpuLimit:
+                        description: CPU limit (e.g., "0.5", "500m")
+                        type: string
+                      cpuRequest:
+                        description: CPU request (e.g., "0.5", "500m")
+                        type: string
+                      memoryLimit:
+                        description: Memory limit (e.g., "100Mi", "1Gi")
+                        type: string
+                      memoryRequest:
+                        description: Memory request (e.g., "100Mi", "1Gi")
+                        type: string
+                    type: object
+                  kruize:
+                    description: Kruize application resource configuration
+                    properties:
+                      cpuLimit:
+                        description: CPU limit (e.g., "0.5", "500m")
+                        type: string
+                      cpuRequest:
+                        description: CPU request (e.g., "0.5", "500m")
+                        type: string
+                      memoryLimit:
+                        description: Memory limit (e.g., "100Mi", "1Gi")
+                        type: string
+                      memoryRequest:
+                        description: Memory request (e.g., "100Mi", "1Gi")
+                        type: string
+                    type: object
+                  persistentVolume:
+                    description: Persistent Volume configuration
+                    properties:
+                      accessModes:
+                        description: Access modes for the persistent volume
+                        items:
+                          type: string
+                        type: array
+                      hostPath:
+                        description: Host path for the persistent volume
+                        type: string
+                      pvStorageSize:
+                        description: |-
+                          Storage size for PersistentVolume (e.g., "500Mi", "1Gi")
+                          If not specified, defaults to 500Mi for OpenShift, 1Gi for Kubernetes
+                        type: string
+                      pvcStorageSize:
+                        description: |-
+                          Storage size for PersistentVolumeClaim (e.g., "500Mi", "1Gi")
+                          If not specified, uses PVStorageSize value
+                        type: string
+                      storageClassName:
+                        description: Storage class name
+                        type: string
+                    type: object
+                type: object
             required:
             - autotune_image
             - autotune_ui_image

@@ -43,6 +43,69 @@ type KruizeSpec struct {
 	// Target namespace for Kruize deployment
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Namespace",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	Namespace         string `json:"namespace"`
+
+	// Resource configuration for Kruize components
+	// +optional
+	Resources *ResourceConfig `json:"resources,omitempty"`
+}
+
+// ResourceConfig defines resource requirements for Kruize components
+type ResourceConfig struct {
+	// Database resource configuration
+	// +optional
+	Database *ContainerResources `json:"database,omitempty"`
+
+	// Kruize application resource configuration
+	// +optional
+	Kruize *ContainerResources `json:"kruize,omitempty"`
+
+	// Persistent Volume configuration
+	// +optional
+	PersistentVolume *PersistentVolumeConfig `json:"persistentVolume,omitempty"`
+}
+
+// ContainerResources defines CPU and memory resource requirements
+type ContainerResources struct {
+	// CPU request (e.g., "0.5", "500m")
+	// +optional
+	CPURequest string `json:"cpuRequest,omitempty"`
+
+	// CPU limit (e.g., "0.5", "500m")
+	// +optional
+	CPULimit string `json:"cpuLimit,omitempty"`
+
+	// Memory request (e.g., "100Mi", "1Gi")
+	// +optional
+	MemoryRequest string `json:"memoryRequest,omitempty"`
+
+	// Memory limit (e.g., "100Mi", "1Gi")
+	// +optional
+	MemoryLimit string `json:"memoryLimit,omitempty"`
+}
+
+// PersistentVolumeConfig defines PV and PVC configuration
+type PersistentVolumeConfig struct {
+	// Storage size for PersistentVolume (e.g., "500Mi", "1Gi")
+	// If not specified, defaults to 500Mi for OpenShift, 1Gi for Kubernetes
+	// +optional
+	PVStorageSize string `json:"pvStorageSize,omitempty"`
+
+	// Storage size for PersistentVolumeClaim (e.g., "500Mi", "1Gi")
+	// If not specified, uses PVStorageSize value
+	// +optional
+	PVCStorageSize string `json:"pvcStorageSize,omitempty"`
+
+	// Storage class name
+	// +optional
+	StorageClassName string `json:"storageClassName,omitempty"`
+
+	// Host path for the persistent volume
+	// +optional
+	HostPath string `json:"hostPath,omitempty"`
+
+	// Access modes for the persistent volume
+	// +optional
+	AccessModes []string `json:"accessModes,omitempty"`
 }
 
 // KruizeStatus defines the observed state of Kruize

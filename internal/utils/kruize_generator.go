@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 
+	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 	"github.com/kruize/kruize-operator/internal/constants"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -32,10 +33,11 @@ type KruizeResourceGenerator struct {
 	Autotune_image    string
 	Autotune_ui_image string
 	ClusterType       string // "openshift", "minikube", or "kind"
+	ResourceConfig    *kruizev1alpha1.ResourceConfig
 }
 
 // NewKruizeResourceGenerator creates a new generator for Kruize resources.
-func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string) *KruizeResourceGenerator {
+func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string, resourceConfig *kruizev1alpha1.ResourceConfig) *KruizeResourceGenerator {
 	// If no image is provided from the CR, use a sensible default.
 	// The default can be configured via environment variables:
 	// - DEFAULT_AUTOTUNE_IMAGE: Override the default Autotune image
@@ -54,7 +56,128 @@ func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotune
 		Autotune_image:    autotuneImage,
 		Autotune_ui_image: autotuneUIImage,
 		ClusterType:       clusterType,
+		ResourceConfig:    resourceConfig,
 	}
+}
+
+// getResourceValue returns the configured value or a default
+func (g *KruizeResourceGenerator) getResourceValue(configValue, defaultValue string) string {
+	if configValue != "" {
+		return configValue
+	}
+	return defaultValue
+}
+
+// getDBResources returns database resource requirements with defaults
+func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
+	cpuRequest := constants.DefaultDBCPURequest
+	cpuLimit := constants.DefaultDBCPULimit
+	memoryRequest := constants.DefaultDBMemoryRequest
+	memoryLimit := constants.DefaultDBMemoryLimit
+
+	if g.ResourceConfig != nil && g.ResourceConfig.Database != nil {
+		cpuRequest = g.getResourceValue(g.ResourceConfig.Database.CPURequest, cpuRequest)
+		cpuLimit = g.getResourceValue(g.ResourceConfig.Database.CPULimit, cpuLimit)
+		memoryRequest = g.getResourceValue(g.ResourceConfig.Database.MemoryRequest, memoryRequest)
+		memoryLimit = g.getResourceValue(g.ResourceConfig.Database.MemoryLimit, memoryLimit)
+	}
+
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memoryRequest),
+			corev1.ResourceCPU:    resource.MustParse(cpuRequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memoryLimit),
+			corev1.ResourceCPU:    resource.MustParse(cpuLimit),
+		},
+	}
+}
+
+// getKruizeResources returns Kruize application resource requirements with defaults
+func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequirements {
+	cpuRequest := constants.DefaultKruizeCPURequest
+	cpuLimit := constants.DefaultKruizeCPULimit
+	memoryRequest := constants.DefaultKruizeMemoryRequest
+	memoryLimit := constants.DefaultKruizeMemoryLimit
+
+	if g.ResourceConfig != nil && g.ResourceConfig.Kruize != nil {
+		cpuRequest = g.getResourceValue(g.ResourceConfig.Kruize.CPURequest, cpuRequest)
+		cpuLimit = g.getResourceValue(g.ResourceConfig.Kruize.CPULimit, cpuLimit)
+		memoryRequest = g.getResourceValue(g.ResourceConfig.Kruize.MemoryRequest, memoryRequest)
+		memoryLimit = g.getResourceValue(g.ResourceConfig.Kruize.MemoryLimit, memoryLimit)
+	}
+
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memoryRequest),
+			corev1.ResourceCPU:    resource.MustParse(cpuRequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memoryLimit),
+			corev1.ResourceCPU:    resource.MustParse(cpuLimit),
+		},
+	}
+}
+
+// getPVConfig returns PV configuration with defaults for OpenShift
+func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+	pvStorageSize = constants.DefaultOpenShiftPVStorageSize
+	pvcStorageSize = constants.DefaultOpenShiftPVStorageSize
+	storageClassName = constants.DefaultOpenShiftStorageClassName
+	hostPath = constants.DefaultOpenShiftHostPath
+	accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
+
+	if g.ResourceConfig != nil && g.ResourceConfig.PersistentVolume != nil {
+		pv := g.ResourceConfig.PersistentVolume
+		pvStorageSize = g.getResourceValue(pv.PVStorageSize, pvStorageSize)
+		// If PVCStorageSize is not set, use PVStorageSize
+		if pv.PVCStorageSize != "" {
+			pvcStorageSize = pv.PVCStorageSize
+		} else {
+			pvcStorageSize = pvStorageSize
+		}
+		storageClassName = g.getResourceValue(pv.StorageClassName, storageClassName)
+		hostPath = g.getResourceValue(pv.HostPath, hostPath)
+
+		if len(pv.AccessModes) > 0 {
+			accessModes = []corev1.PersistentVolumeAccessMode{}
+			for _, mode := range pv.AccessModes {
+				accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
+			}
+		}
+	}
+
+	return pvStorageSize, pvcStorageSize, storageClassName, hostPath, accessModes
+}
+
+// getPVConfigKubernetes returns PV configuration with defaults for Kubernetes/Kind/Minikube
+func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcStorageSize, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+	pvStorageSize = constants.DefaultKubernetesPVStorageSize
+	pvcStorageSize = constants.DefaultKubernetesPVStorageSize
+	hostPath = constants.DefaultKubernetesHostPath
+	accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
+
+	if g.ResourceConfig != nil && g.ResourceConfig.PersistentVolume != nil {
+		pv := g.ResourceConfig.PersistentVolume
+		pvStorageSize = g.getResourceValue(pv.PVStorageSize, pvStorageSize)
+		// If PVCStorageSize is not set, use PVStorageSize
+		if pv.PVCStorageSize != "" {
+			pvcStorageSize = pv.PVCStorageSize
+		} else {
+			pvcStorageSize = pvStorageSize
+		}
+		hostPath = g.getResourceValue(pv.HostPath, hostPath)
+
+		if len(pv.AccessModes) > 0 {
+			accessModes = []corev1.PersistentVolumeAccessMode{}
+			for _, mode := range pv.AccessModes {
+				accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
+			}
+		}
+	}
+
+	return pvStorageSize, pvcStorageSize, hostPath, accessModes
 }
 
 // ClusterScopedResources generates all cluster-scoped resources for Kruize.
@@ -268,6 +391,8 @@ func (g *KruizeResourceGenerator) ManualStorageClass() *storagev1.StorageClass {
 // kruizeDBPersistentVolume generates the PersistentVolume for the Kruize database.
 // Note: PersistentVolumes are cluster-scoped resources.
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentVolume {
+	pvStorageSize, _, storageClassName, hostPath, accessModes := g.getPVConfig()
+
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -281,17 +406,15 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentV
 			},
 		},
 		Spec: corev1.PersistentVolumeSpec{
-			StorageClassName: "manual",
+			StorageClassName: storageClassName,
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: resource.MustParse("500Mi"),
+				corev1.ResourceStorage: resource.MustParse(pvStorageSize),
 			},
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteMany,
-			},
+			AccessModes: accessModes,
 			// The HostPath must be nested inside the PersistentVolumeSource struct.
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/mnt/data",
+					Path: hostPath,
 				},
 			},
 		},
@@ -300,7 +423,8 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentV
 
 // kruizeDBPersistentVolumeClaim generates the PersistentVolumeClaim for the Kruize database.
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
-	storageClassName := "manual"
+	_, pvcStorageSize, storageClassName, _, accessModes := g.getPVConfig()
+
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -315,12 +439,10 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaim() *corev1.Persis
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			StorageClassName: &storageClassName,
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteMany,
-			},
+			AccessModes:      accessModes,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("500Mi"),
+					corev1.ResourceStorage: resource.MustParse(pvcStorageSize),
 				},
 			},
 		},
@@ -468,16 +590,7 @@ func (g *KruizeResourceGenerator) kruizeDBDeployment() *appsv1.Deployment {
 								{Name: "POSTGRES_DB", Value: "kruizeDB"},
 								{Name: "PGDATA", Value: "/var/lib/pg_data"},
 							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("100Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.5"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("100Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.5"),
-								},
-							},
+							Resources: g.getDBResources(),
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: 5432},
 							},
@@ -595,16 +708,7 @@ func (g *KruizeResourceGenerator) kruizeDeployment() *appsv1.Deployment {
 								{Name: "KAFKA_RESPONSE_FILTER_INCLUDE", Value: "experiments|status|apis|recommendations|response|status_history"},
 								{Name: "KAFKA_RESPONSE_FILTER_EXCLUDE", Value: ""},
 							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("768Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.7"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("768Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.7"),
-								},
-							},
+							Resources: g.getKruizeResources(),
 							Ports: []corev1.ContainerPort{
 								{Name: "kruize-port", ContainerPort: 8080},
 							},
@@ -661,7 +765,6 @@ func (g *KruizeResourceGenerator) kruizeService() *corev1.Service {
 		},
 	}
 }
-
 
 func (g *KruizeResourceGenerator) kruizeUINginxPod() *corev1.Pod {
 	return &corev1.Pod{
@@ -855,7 +958,6 @@ func (g *KruizeResourceGenerator) kruizeEditKOClusterRoleBinding() *rbacv1.Clust
 	}
 }
 
-
 // kruizeEditKOClusterRoleBindingKubernetes generates the ClusterRoleBinding for kruize-edit-ko
 func (g *KruizeResourceGenerator) kruizeEditKOClusterRoleBindingKubernetes() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
@@ -937,6 +1039,8 @@ func (g *KruizeResourceGenerator) instaslicesAccessClusterRoleBindingKubernetes(
 
 // kruizeDBPersistentVolumeKubernetes generates PV for Kind/Minikube/Kubernetes (different from OpenShift)
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.PersistentVolume {
+	pvStorageSize, _, hostPath, accessModes := g.getPVConfigKubernetes()
+
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -951,15 +1055,13 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 		},
 		Spec: corev1.PersistentVolumeSpec{
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: resource.MustParse("1Gi"),
+				corev1.ResourceStorage: resource.MustParse(pvStorageSize),
 			},
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteOnce,
-			},
+			AccessModes:                   accessModes,
 			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/data/postgres",
+					Path: hostPath,
 				},
 			},
 		},
@@ -968,6 +1070,8 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 
 // kruizeDBPersistentVolumeClaimKubernetes generates PVC for Kind/Minikube/Kubernetes
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *corev1.PersistentVolumeClaim {
+	_, pvcStorageSize, _, accessModes := g.getPVConfigKubernetes()
+
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -978,12 +1082,10 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *cor
 			Namespace: g.Namespace,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteOnce,
-			},
+			AccessModes: accessModes,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("1Gi"),
+					corev1.ResourceStorage: resource.MustParse(pvcStorageSize),
 				},
 			},
 		},
@@ -1440,7 +1542,6 @@ func (g *KruizeResourceGenerator) kruizeToPrometheusNetworkPolicy() *networkingv
 		},
 	}
 }
-
 
 // recommendationUpdaterClusterRoleBindingKubernetes generates the ClusterRoleBinding for the recommendation updater.
 func (g *KruizeResourceGenerator) recommendationUpdaterClusterRoleBindingKubernetes() *rbacv1.ClusterRoleBinding {
