@@ -697,6 +697,12 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsNonRoot: boolPtr(true),
+						SeccompProfile: &corev1.SeccompProfile{
+							Type: corev1.SeccompProfileTypeRuntimeDefault,
+						},
+					},
 					Containers: []corev1.Container{
 						{
 							Name:            "kruize-ui-nginx-container",
@@ -726,9 +732,6 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 								AllowPrivilegeEscalation: boolPtr(false),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
-								},
-								SeccompProfile: &corev1.SeccompProfile{
-									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
 							},
 						},
