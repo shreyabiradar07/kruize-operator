@@ -303,13 +303,14 @@ var _ = Describe("controller", Ordered, func() {
 			deployedUIImage := strings.TrimSpace(string(output))
 			fmt.Fprintf(GinkgoWriter, "Deployed Kruize UI image: %s\n", deployedUIImage)
 			
-			// If custom Kruize UI image was specified, verify it matches
+			// If custom Kruize UI image was specified, verify it matches and fail on mismatch
 			if kruizeUIImage != "" {
-				if deployedUIImage == kruizeUIImage {
-					fmt.Fprintf(GinkgoWriter, "✓ Deployed UI image matches specified KRUIZE_UI_IMAGE: %s\n", kruizeUIImage)
-				} else {
-					fmt.Fprintf(GinkgoWriter, "⚠ Warning: Deployed UI image %s does not match specified KRUIZE_UI_IMAGE %s\n", deployedUIImage, kruizeUIImage)
-				}
+				fmt.Fprintf(GinkgoWriter, "Validating deployed UI image against KRUIZE_UI_IMAGE: %s\n", kruizeUIImage)
+				ExpectWithOffset(1, deployedUIImage).To(
+					Equal(kruizeUIImage),
+					fmt.Sprintf("Deployed UI image %s does not match KRUIZE_UI_IMAGE %s", deployedUIImage, kruizeUIImage),
+				)
+				fmt.Fprintf(GinkgoWriter, "✓ Deployed UI image matches specified KRUIZE_UI_IMAGE: %s\n", kruizeUIImage)
 			} else {
 				fmt.Fprintf(GinkgoWriter, "Using default Kruize UI image from CR: %s\n", deployedUIImage)
 			}
