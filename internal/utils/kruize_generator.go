@@ -719,10 +719,6 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 							Image:           g.Autotune_ui_image,
 							ImagePullPolicy: corev1.PullAlways,
 							Env: []corev1.EnvVar{
-								{Name: "KRUIZE_API_URL", Value: "http://kruize:8080"},
-								{Name: "REACT_APP_KRUIZE_API_URL", Value: "http://kruize:8080"},
-								{Name: "KRUIZE_UI_API_URL", Value: "http://kruize:8080"},
-								{Name: "API_URL", Value: "http://kruize:8080"},
 								{Name: "KRUIZE_UI_ENV", Value: "production"},
 							},
 							VolumeMounts: []corev1.VolumeMount{
