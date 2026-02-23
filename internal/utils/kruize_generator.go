@@ -703,6 +703,10 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 							Image:           g.Autotune_ui_image,
 							ImagePullPolicy: corev1.PullAlways,
 							Env: []corev1.EnvVar{
+								{Name: "KRUIZE_API_URL", Value: "http://kruize:8080"},
+								{Name: "REACT_APP_KRUIZE_API_URL", Value: "http://kruize:8080"},
+								{Name: "KRUIZE_UI_API_URL", Value: "http://kruize:8080"},
+								{Name: "API_URL", Value: "http://kruize:8080"},
 								{Name: "KRUIZE_UI_ENV", Value: "production"},
 							},
 							VolumeMounts: []corev1.VolumeMount{
@@ -710,6 +714,22 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 									Name:      "nginx-config-volume",
 									MountPath: "/etc/nginx/nginx.conf",
 									SubPath:   "nginx.conf",
+								},
+								{
+									Name:      "nginx-cache",
+									MountPath: "/var/cache/nginx",
+								},
+								{Name: "nginx-pid", MountPath: "/var/run"},
+								{Name: "nginx-tmp", MountPath: "/tmp"},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								AllowPrivilegeEscalation: boolPtr(false),
+								RunAsNonRoot:             boolPtr(true),
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{"ALL"},
+								},
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
 							},
 						},
@@ -725,6 +745,14 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 								},
 							},
 						},
+						{
+							Name: "nginx-cache",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+						{Name: "nginx-pid", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+						{Name: "nginx-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 					},
 				},
 			},
