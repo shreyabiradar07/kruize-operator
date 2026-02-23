@@ -665,6 +665,21 @@ func (g *KruizeResourceGenerator) kruizeService() *corev1.Service {
 
 func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 	replicas := int32(1)
+	
+	// Build pod security context based on cluster type
+	podSecurityContext := &corev1.PodSecurityContext{
+		RunAsNonRoot: boolPtr(true),
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+	
+	// Only set RunAsUser for non-OpenShift clusters
+	// OpenShift SCC will reject hardcoded UIDs and assign its own
+	if g.ClusterType != constants.ClusterTypeOpenShift {
+		podSecurityContext.RunAsUser = int64Ptr(101)
+	}
+	
 	return &appsv1.Deployment{
 		// The TypeMeta tells the client which kind of object this is.
 		TypeMeta: metav1.TypeMeta{
@@ -697,12 +712,7 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 					},
 				},
 				Spec: corev1.PodSpec{
-					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: boolPtr(true),
-						SeccompProfile: &corev1.SeccompProfile{
-							Type: corev1.SeccompProfileTypeRuntimeDefault,
-						},
-					},
+					SecurityContext: podSecurityContext,
 					Containers: []corev1.Container{
 						{
 							Name:            "kruize-ui-nginx-container",
