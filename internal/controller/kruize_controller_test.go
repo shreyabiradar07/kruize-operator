@@ -439,27 +439,119 @@ var _ = Describe("Kruize Controller", func() {
 	})
 
 	Context("Kruize deployment manifest generation", func() {
-		DescribeTable("should generate valid Kruize deployment manifest",
+		DescribeTable("should generate valid Kruize deployment manifest with default resources",
 			func(clusterType string, resourceMethod func(*utils.KruizeResourceGenerator) []client.Object) {
 				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", clusterType, nil)
 				namespacedResources := resourceMethod(generator)
 
-				// Check for Deployment resources
-				var hasKruizeDeployment, hasKruizeDBDeployment bool
+				// Check for Deployment resources and validate default resource configuration
+				var kruizeDeployment *appsv1.Deployment
+				var kruizeDBDeployment *appsv1.Deployment
+				
 				for _, resource := range namespacedResources {
 					kind := resource.GetObjectKind().GroupVersionKind().Kind
 					name := resource.GetName()
 
 					if kind == "Deployment" && name == "kruize" {
-						hasKruizeDeployment = true
+						var ok bool
+						kruizeDeployment, ok = resource.(*appsv1.Deployment)
+						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
 					}
 					if kind == "Deployment" && name == "kruize-db-deployment" {
-						hasKruizeDBDeployment = true
+						var ok bool
+						kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
+						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
 					}
 				}
 
-				Expect(hasKruizeDeployment).To(BeTrue(), "Kruize deployment should be generated")
-				Expect(hasKruizeDBDeployment).To(BeTrue(), "Kruize DB deployment should be generated")
+				Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should be generated")
+				Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should be generated")
+
+				// Validate Kruize deployment has default resource configuration
+				Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+				kruizeContainer := kruizeDeployment.Spec.Template.Spec.Containers[0]
+				Expect(kruizeContainer.Name).To(Equal("kruize"))
+				Expect(kruizeContainer.Resources.Requests.Cpu().String()).To(Equal("700m"))
+				Expect(kruizeContainer.Resources.Requests.Memory().String()).To(Equal("768Mi"))
+				Expect(kruizeContainer.Resources.Limits.Cpu().String()).To(Equal("700m"))
+				Expect(kruizeContainer.Resources.Limits.Memory().String()).To(Equal("768Mi"))
+
+				// Validate DB deployment has default resource configuration
+				Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+				dbContainer := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
+				Expect(dbContainer.Name).To(Equal("kruize-db"))
+				Expect(dbContainer.Resources.Requests.Cpu().String()).To(Equal("500m"))
+				Expect(dbContainer.Resources.Requests.Memory().String()).To(Equal("100Mi"))
+				Expect(dbContainer.Resources.Limits.Cpu().String()).To(Equal("500m"))
+				Expect(dbContainer.Resources.Limits.Memory().String()).To(Equal("100Mi"))
+			},
+			Entry("for OpenShift", constants.ClusterTypeOpenShift, func(g *utils.KruizeResourceGenerator) []client.Object {
+				return g.NamespacedResources()
+			}),
+			Entry("for Kubernetes", constants.ClusterTypeMinikube, func(g *utils.KruizeResourceGenerator) []client.Object {
+				return g.KubernetesNamespacedResources()
+			}),
+		)
+
+		DescribeTable("should generate valid Kruize deployment manifest with custom resources",
+			func(clusterType string, resourceMethod func(*utils.KruizeResourceGenerator) []client.Object) {
+				customResources := &kruizev1alpha1.ResourceConfig{
+					Kruize: &kruizev1alpha1.ContainerResources{
+						CPURequest:    "2.0",
+						CPULimit:      "2.5",
+						MemoryRequest: "1Gi",
+						MemoryLimit:   "1.5Gi",
+					},
+					Database: &kruizev1alpha1.ContainerResources{
+						CPURequest:    "0.75",
+						CPULimit:      "1.5",
+						MemoryRequest: "512Mi",
+						MemoryLimit:   "1Gi",
+					},
+				}
+				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", clusterType, customResources)
+				namespacedResources := resourceMethod(generator)
+
+				// Check for Deployment resources and validate custom resource configuration
+				var kruizeDeployment *appsv1.Deployment
+				var kruizeDBDeployment *appsv1.Deployment
+				
+				for _, resource := range namespacedResources {
+					kind := resource.GetObjectKind().GroupVersionKind().Kind
+					name := resource.GetName()
+
+					if kind == "Deployment" && name == "kruize" {
+						var ok bool
+						kruizeDeployment, ok = resource.(*appsv1.Deployment)
+						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					}
+					if kind == "Deployment" && name == "kruize-db-deployment" {
+						var ok bool
+						kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
+						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					}
+				}
+
+				Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should be generated")
+				Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should be generated")
+
+				// Validate Kruize deployment has custom resource configuration
+				Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+				kruizeContainer := kruizeDeployment.Spec.Template.Spec.Containers[0]
+				Expect(kruizeContainer.Name).To(Equal("kruize"))
+				Expect(kruizeContainer.Resources.Requests.Cpu().String()).To(Equal("2"))
+				Expect(kruizeContainer.Resources.Requests.Memory().String()).To(Equal("1Gi"))
+				Expect(kruizeContainer.Resources.Limits.Cpu().String()).To(Equal("2500m"))
+				Expect(kruizeContainer.Resources.Limits.Memory().String()).To(Equal("1536Mi"))
+
+				// Validate DB deployment has custom resource configuration
+				Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+				dbContainer := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
+				Expect(dbContainer.Name).To(Equal("kruize-db"))
+				Expect(dbContainer.Resources.Requests.Cpu().String()).To(Equal("750m"))
+				Expect(dbContainer.Resources.Requests.Memory().String()).To(Equal("512Mi"))
+				Expect(dbContainer.Resources.Limits.Cpu().String()).To(Equal("1500m"))
+				Expect(dbContainer.Resources.Limits.Memory().String()).To(Equal("1Gi"))
 			},
 			Entry("for OpenShift", constants.ClusterTypeOpenShift, func(g *utils.KruizeResourceGenerator) []client.Object {
 				return g.NamespacedResources()
@@ -531,6 +623,524 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
 			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers[0].Name).To(Equal("kruize-db"))
+		})
+
+		It("should apply custom resource configuration to Kruize deployment", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				Kruize: &kruizev1alpha1.ContainerResources{
+					CPURequest:    "1.0",
+					CPULimit:      "2.0",
+					MemoryRequest: "1Gi",
+					MemoryLimit:   "2Gi",
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customResources)
+
+			namespacedResources := generator.NamespacedResources()
+
+			// Find the Kruize deployment
+			var kruizeDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
+					var ok bool
+					kruizeDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+
+			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
+			Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+			
+			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
+			Expect(container.Name).To(Equal("kruize"))
+			
+			// Verify custom resource requests
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("1"))
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("1Gi"))
+			
+			// Verify custom resource limits
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("2"))
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("2Gi"))
+		})
+
+		It("should apply custom resource configuration to Database deployment", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				Database: &kruizev1alpha1.ContainerResources{
+					CPURequest:    "0.25",
+					CPULimit:      "1.0",
+					MemoryRequest: "256Mi",
+					MemoryLimit:   "512Mi",
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customResources)
+
+			namespacedResources := generator.NamespacedResources()
+
+			// Find the Kruize DB deployment
+			var kruizeDBDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-db-deployment" {
+					var ok bool
+					kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+
+			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
+			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+			
+			container := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
+			Expect(container.Name).To(Equal("kruize-db"))
+			
+			// Verify custom resource requests
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("250m"))
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("256Mi"))
+			
+			// Verify custom resource limits
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("1"))
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("512Mi"))
+		})
+
+		It("should use default resources when ResourceConfig is nil", func() {
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, nil)
+
+			namespacedResources := generator.NamespacedResources()
+
+			// Find the Kruize deployment
+			var kruizeDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
+					var ok bool
+					kruizeDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+
+			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
+			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
+			
+			// Verify default resource requests
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("700m"))
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("768Mi"))
+			
+			// Verify default resource limits
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("700m"))
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("768Mi"))
+		})
+
+		It("should apply partial custom resource configuration with defaults", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				Kruize: &kruizev1alpha1.ContainerResources{
+					CPURequest:  "1.5",
+					MemoryLimit: "3Gi",
+					// CPULimit and MemoryRequest not specified, should use defaults
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customResources)
+
+			namespacedResources := generator.NamespacedResources()
+
+			// Find the Kruize deployment
+			var kruizeDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
+					var ok bool
+					kruizeDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+
+			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
+			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
+			
+			// Verify custom CPU request
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("1500m"))
+			// Verify default memory request
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("768Mi"))
+			
+			// Verify default CPU limit
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("700m"))
+			// Verify custom memory limit
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("3Gi"))
+		})
+	})
+
+	Context("Partial ResourceConfig edge cases", func() {
+		It("should apply partial Database ResourceConfig with only CPURequest set", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				Database: &kruizev1alpha1.ContainerResources{
+					CPURequest: "0.3",
+					// CPULimit, MemoryRequest, and MemoryLimit intentionally omitted
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customResources)
+
+			namespacedResources := generator.NamespacedResources()
+
+			// Find the Kruize DB deployment
+			var kruizeDBDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-db-deployment" {
+					var ok bool
+					kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+
+			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
+			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+			
+			container := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
+			Expect(container.Name).To(Equal("kruize-db"))
+			
+			// Verify custom CPU request
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("300m"))
+			// Verify default values for unset fields
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("100Mi"))
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("500m"))
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("100Mi"))
+		})
+
+		It("should apply partial Kruize ResourceConfig with only MemoryLimit set", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				Kruize: &kruizev1alpha1.ContainerResources{
+					MemoryLimit: "2Gi",
+					// CPURequest, CPULimit, and MemoryRequest intentionally omitted
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customResources)
+
+			namespacedResources := generator.KubernetesNamespacedResources()
+
+			// Find the Kruize deployment
+			var kruizeDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
+					var ok bool
+					kruizeDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+
+			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
+			Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+			
+			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
+			Expect(container.Name).To(Equal("kruize"))
+			
+			// Verify default values for unset fields
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("700m"))
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("768Mi"))
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("700m"))
+			// Verify custom memory limit
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("2Gi"))
+		})
+
+		It("should apply partial Database ResourceConfig with mixed custom and default values", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				Database: &kruizev1alpha1.ContainerResources{
+					CPULimit:      "1.0",
+					MemoryRequest: "256Mi",
+					// CPURequest and MemoryLimit intentionally omitted
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customResources)
+
+			namespacedResources := generator.KubernetesNamespacedResources()
+
+			// Find the Kruize DB deployment
+			var kruizeDBDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-db-deployment" {
+					var ok bool
+					kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+
+			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
+			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+			
+			container := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
+			Expect(container.Name).To(Equal("kruize-db"))
+			
+			// Verify default CPU request
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("500m"))
+			// Verify custom memory request
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("256Mi"))
+			// Verify custom CPU limit
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("1"))
+			// Verify default memory limit
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("100Mi"))
+		})
+	})
+
+	Context("PersistentVolume and PVC configuration", func() {
+		It("should apply custom PV/PVC configuration for OpenShift", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				PersistentVolume: &kruizev1alpha1.PersistentVolumeConfig{
+					PVStorageSize:    "2Gi",
+					PVCStorageSize:   "1Gi",
+					StorageClassName: "custom-storage",
+					HostPath:         "/custom/path",
+					AccessModes:      []string{"ReadWriteOnce"},
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customResources)
+
+			clusterResources := generator.ClusterScopedResources()
+
+			// Find the PV
+			var pv *corev1.PersistentVolume
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
+					var ok bool
+					pv, ok = resource.(*corev1.PersistentVolume)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
+					break
+				}
+			}
+
+			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
+			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("2Gi"))
+			Expect(pv.Spec.StorageClassName).To(Equal("custom-storage"))
+			Expect(pv.Spec.PersistentVolumeSource.HostPath.Path).To(Equal("/custom/path"))
+			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
+
+			// Find the PVC
+			var pvc *corev1.PersistentVolumeClaim
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
+					var ok bool
+					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
+					break
+				}
+			}
+
+			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
+			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
+			Expect(*pvc.Spec.StorageClassName).To(Equal("custom-storage"))
+			Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
+		})
+
+		It("should apply custom PV/PVC configuration for Kubernetes", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				PersistentVolume: &kruizev1alpha1.PersistentVolumeConfig{
+					PVStorageSize:    "3Gi",
+					PVCStorageSize:   "2Gi",
+					StorageClassName: "k8s-storage",
+					HostPath:         "/k8s/custom/path",
+					AccessModes:      []string{"ReadWriteMany"},
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customResources)
+
+			clusterResources := generator.KubernetesClusterScopedResources()
+
+			// Find the PV
+			var pv *corev1.PersistentVolume
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
+					var ok bool
+					pv, ok = resource.(*corev1.PersistentVolume)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
+					break
+				}
+			}
+
+			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
+			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("3Gi"))
+			Expect(pv.Spec.StorageClassName).To(Equal("k8s-storage"))
+			Expect(pv.Spec.PersistentVolumeSource.HostPath.Path).To(Equal("/k8s/custom/path"))
+			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
+
+			// Find the PVC
+			var pvc *corev1.PersistentVolumeClaim
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
+					var ok bool
+					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
+					break
+				}
+			}
+
+			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
+			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("2Gi"))
+			Expect(*pvc.Spec.StorageClassName).To(Equal("k8s-storage"))
+			Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
+		})
+
+		It("should fallback PVCStorageSize to PVStorageSize when PVCStorageSize is omitted for OpenShift", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				PersistentVolume: &kruizev1alpha1.PersistentVolumeConfig{
+					PVStorageSize:    "5Gi",
+					// PVCStorageSize is intentionally omitted
+					StorageClassName: "fallback-storage",
+					HostPath:         "/fallback/path",
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customResources)
+
+			clusterResources := generator.ClusterScopedResources()
+
+			// Find the PV
+			var pv *corev1.PersistentVolume
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
+					var ok bool
+					pv, ok = resource.(*corev1.PersistentVolume)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
+					break
+				}
+			}
+
+			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
+			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("5Gi"))
+
+			// Find the PVC and verify it uses PVStorageSize
+			var pvc *corev1.PersistentVolumeClaim
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
+					var ok bool
+					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
+					break
+				}
+			}
+
+			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
+			// PVC should use PVStorageSize since PVCStorageSize was not specified
+			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("5Gi"))
+		})
+
+		It("should fallback PVCStorageSize to PVStorageSize when PVCStorageSize is omitted for Kubernetes", func() {
+			customResources := &kruizev1alpha1.ResourceConfig{
+				PersistentVolume: &kruizev1alpha1.PersistentVolumeConfig{
+					PVStorageSize: "4Gi",
+					// PVCStorageSize is intentionally omitted
+					StorageClassName: "k8s-fallback",
+					HostPath:         "/k8s/fallback",
+				},
+			}
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customResources)
+
+			clusterResources := generator.KubernetesClusterScopedResources()
+
+			// Find the PV
+			var pv *corev1.PersistentVolume
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
+					var ok bool
+					pv, ok = resource.(*corev1.PersistentVolume)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
+					break
+				}
+			}
+
+			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
+			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("4Gi"))
+
+			// Find the PVC and verify it uses PVStorageSize
+			var pvc *corev1.PersistentVolumeClaim
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
+					var ok bool
+					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
+					break
+				}
+			}
+
+			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
+			// PVC should use PVStorageSize since PVCStorageSize was not specified
+			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("4Gi"))
+		})
+
+		It("should use default PV/PVC configuration when ResourceConfig is nil for OpenShift", func() {
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, nil)
+
+			clusterResources := generator.ClusterScopedResources()
+
+			// Find the PV
+			var pv *corev1.PersistentVolume
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
+					var ok bool
+					pv, ok = resource.(*corev1.PersistentVolume)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
+					break
+				}
+			}
+
+			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
+			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("500Mi"))
+			Expect(pv.Spec.StorageClassName).To(Equal("manual"))
+			Expect(pv.Spec.PersistentVolumeSource.HostPath.Path).To(Equal("/mnt/data"))
+			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
+
+			// Find the PVC
+			var pvc *corev1.PersistentVolumeClaim
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
+					var ok bool
+					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
+					break
+				}
+			}
+
+			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
+			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("500Mi"))
+			Expect(*pvc.Spec.StorageClassName).To(Equal("manual"))
+			Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
+		})
+
+		It("should use default PV/PVC configuration when ResourceConfig is nil for Kubernetes", func() {
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, nil)
+
+			clusterResources := generator.KubernetesClusterScopedResources()
+
+			// Find the PV
+			var pv *corev1.PersistentVolume
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
+					var ok bool
+					pv, ok = resource.(*corev1.PersistentVolume)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
+					break
+				}
+			}
+
+			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
+			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("1Gi"))
+			Expect(pv.Spec.StorageClassName).To(Equal("manual"))
+			Expect(pv.Spec.PersistentVolumeSource.HostPath.Path).To(Equal("/tmp/data"))
+			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
+
+			// Find the PVC
+			var pvc *corev1.PersistentVolumeClaim
+			for _, resource := range clusterResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
+					var ok bool
+					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
+					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
+					break
+				}
+			}
+
+			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
+			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
+			Expect(*pvc.Spec.StorageClassName).To(Equal("manual"))
+			Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 		})
 	})
 

@@ -1149,6 +1149,7 @@ func (g *KruizeResourceGenerator) kruizeDBDeploymentKubernetes() *appsv1.Deploym
 								{Name: "POSTGRES_USER", Value: "admin"},
 								{Name: "POSTGRES_DB", Value: "kruizeDB"},
 							},
+							Resources: g.getDBResources(),
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: 5432},
 							},
@@ -1315,6 +1316,7 @@ func (g *KruizeResourceGenerator) kruizeDeploymentKubernetes() *appsv1.Deploymen
 								{Name: "KAFKA_RESPONSE_FILTER_INCLUDE", Value: "summary"},
 								{Name: "KAFKA_RESPONSE_FILTER_EXCLUDE", Value: ""},
 							},
+							Resources: g.getKruizeResources(),
 							Ports: []corev1.ContainerPort{
 								{Name: "kruize-port", ContainerPort: 8080},
 							},
