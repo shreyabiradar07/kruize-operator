@@ -68,6 +68,20 @@ func (g *KruizeResourceGenerator) getResourceValue(configValue, defaultValue str
 	return defaultValue
 }
 
+// parseResourceQuantity safely parses a resource quantity string.
+// If parsing the user-provided value fails, it falls back to the default value.
+func parseResourceQuantity(value, defaultValue string) resource.Quantity {
+	// Parse the user-provided value first
+	quantity, err := resource.ParseQuantity(value)
+	if err == nil {
+		return quantity
+	}
+	
+	// If user value is invalid, fall back to the default value
+	// The default values are hardcoded constants, so MustParse is safe here
+	return resource.MustParse(defaultValue)
+}
+
 // getDBResources returns database resource requirements with defaults
 func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
 	cpuRequest := constants.DefaultDBCPURequest
@@ -84,12 +98,12 @@ func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
 
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse(memoryRequest),
-			corev1.ResourceCPU:    resource.MustParse(cpuRequest),
+			corev1.ResourceMemory: parseResourceQuantity(memoryRequest, constants.DefaultDBMemoryRequest),
+			corev1.ResourceCPU:    parseResourceQuantity(cpuRequest, constants.DefaultDBCPURequest),
 		},
 		Limits: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse(memoryLimit),
-			corev1.ResourceCPU:    resource.MustParse(cpuLimit),
+			corev1.ResourceMemory: parseResourceQuantity(memoryLimit, constants.DefaultDBMemoryLimit),
+			corev1.ResourceCPU:    parseResourceQuantity(cpuLimit, constants.DefaultDBCPULimit),
 		},
 	}
 }
@@ -110,12 +124,12 @@ func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequiremen
 
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse(memoryRequest),
-			corev1.ResourceCPU:    resource.MustParse(cpuRequest),
+			corev1.ResourceMemory: parseResourceQuantity(memoryRequest, constants.DefaultKruizeMemoryRequest),
+			corev1.ResourceCPU:    parseResourceQuantity(cpuRequest, constants.DefaultKruizeCPURequest),
 		},
 		Limits: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse(memoryLimit),
-			corev1.ResourceCPU:    resource.MustParse(cpuLimit),
+			corev1.ResourceMemory: parseResourceQuantity(memoryLimit, constants.DefaultKruizeMemoryLimit),
+			corev1.ResourceCPU:    parseResourceQuantity(cpuLimit, constants.DefaultKruizeCPULimit),
 		},
 	}
 }
@@ -152,9 +166,10 @@ func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, 
 }
 
 // getPVConfigKubernetes returns PV configuration with defaults for Kubernetes/Kind/Minikube
-func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcStorageSize, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
 	pvStorageSize = constants.DefaultKubernetesPVStorageSize
 	pvcStorageSize = constants.DefaultKubernetesPVStorageSize
+	storageClassName = constants.DefaultOpenShiftStorageClassName
 	hostPath = constants.DefaultKubernetesHostPath
 	accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 
@@ -167,6 +182,7 @@ func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcSto
 		} else {
 			pvcStorageSize = pvStorageSize
 		}
+		storageClassName = g.getResourceValue(pv.StorageClassName, storageClassName)
 		hostPath = g.getResourceValue(pv.HostPath, hostPath)
 
 		if len(pv.AccessModes) > 0 {
@@ -177,7 +193,7 @@ func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcSto
 		}
 	}
 
-	return pvStorageSize, pvcStorageSize, hostPath, accessModes
+	return pvStorageSize, pvcStorageSize, storageClassName, hostPath, accessModes
 }
 
 // ClusterScopedResources generates all cluster-scoped resources for Kruize.
@@ -408,7 +424,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentV
 		Spec: corev1.PersistentVolumeSpec{
 			StorageClassName: storageClassName,
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: resource.MustParse(pvStorageSize),
+				corev1.ResourceStorage: parseResourceQuantity(pvStorageSize, constants.DefaultOpenShiftPVStorageSize),
 			},
 			AccessModes: accessModes,
 			// The HostPath must be nested inside the PersistentVolumeSource struct.
@@ -442,7 +458,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaim() *corev1.Persis
 			AccessModes:      accessModes,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(pvcStorageSize),
+					corev1.ResourceStorage: parseResourceQuantity(pvcStorageSize, constants.DefaultOpenShiftPVStorageSize),
 				},
 			},
 		},
@@ -1039,7 +1055,7 @@ func (g *KruizeResourceGenerator) instaslicesAccessClusterRoleBindingKubernetes(
 
 // kruizeDBPersistentVolumeKubernetes generates PV for Kind/Minikube/Kubernetes (different from OpenShift)
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.PersistentVolume {
-	pvStorageSize, _, hostPath, accessModes := g.getPVConfigKubernetes()
+	pvStorageSize, _, storageClassName, hostPath, accessModes := g.getPVConfigKubernetes()
 
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
@@ -1054,8 +1070,9 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 			},
 		},
 		Spec: corev1.PersistentVolumeSpec{
+			StorageClassName: storageClassName,
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: resource.MustParse(pvStorageSize),
+				corev1.ResourceStorage: parseResourceQuantity(pvStorageSize, constants.DefaultKubernetesPVStorageSize),
 			},
 			AccessModes:                   accessModes,
 			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
@@ -1070,7 +1087,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 
 // kruizeDBPersistentVolumeClaimKubernetes generates PVC for Kind/Minikube/Kubernetes
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *corev1.PersistentVolumeClaim {
-	_, pvcStorageSize, _, accessModes := g.getPVConfigKubernetes()
+	_, pvcStorageSize, storageClassName, _, accessModes := g.getPVConfigKubernetes()
 
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
@@ -1082,10 +1099,11 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *cor
 			Namespace: g.Namespace,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: accessModes,
+			StorageClassName: &storageClassName,
+			AccessModes:      accessModes,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(pvcStorageSize),
+					corev1.ResourceStorage: parseResourceQuantity(pvcStorageSize, constants.DefaultKubernetesPVStorageSize),
 				},
 			},
 		},
