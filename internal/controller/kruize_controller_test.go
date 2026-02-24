@@ -348,6 +348,159 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(generator.Autotune_image).To(Equal(customImage))
 			Expect(generator.Autotune_ui_image).To(Equal(customUIImage))
 		})
+
+		It("should apply custom ResourceConfig to Kruize and Database deployments", func() {
+			cpuRequest := "200m"
+			cpuLimit := "500m"
+			memRequest := "256Mi"
+			memLimit := "512Mi"
+
+			kruize := &kruizev1alpha1.Kruize{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-kruize",
+					Namespace: "test-namespace",
+				},
+				Spec: kruizev1alpha1.KruizeSpec{
+					Resources: &kruizev1alpha1.ResourceConfig{
+						Database: &kruizev1alpha1.ContainerResources{
+							CPURequest:    cpuRequest,
+							CPULimit:      cpuLimit,
+							MemoryRequest: memRequest,
+							MemoryLimit:   memLimit,
+						},
+						Kruize: &kruizev1alpha1.ContainerResources{
+							CPURequest:    cpuRequest,
+							CPULimit:      cpuLimit,
+							MemoryRequest: memRequest,
+							MemoryLimit:   memLimit,
+						},
+					},
+				},
+			}
+
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, kruize.Spec.Resources)
+
+			namespacedResources := generator.NamespacedResources()
+			Expect(namespacedResources).NotTo(BeEmpty())
+
+			var kruizeDeployment *appsv1.Deployment
+			var dbDeployment *appsv1.Deployment
+
+			for _, obj := range namespacedResources {
+				deploy, ok := obj.(*appsv1.Deployment)
+				if !ok {
+					continue
+				}
+				switch deploy.Name {
+				case "kruize":
+					kruizeDeployment = deploy
+				case "kruize-db-deployment":
+					dbDeployment = deploy
+				}
+			}
+
+			Expect(kruizeDeployment).NotTo(BeNil(), "expected Kruize deployment to be generated")
+			Expect(dbDeployment).NotTo(BeNil(), "expected Database deployment to be generated")
+
+			// Verify Kruize container resources
+			kruizeContainer := findContainerByName(kruizeDeployment.Spec.Template.Spec.Containers, "kruize")
+			Expect(kruizeContainer).NotTo(BeNil(), "expected to find kruize container")
+			Expect(kruizeContainer.Resources.Requests.Cpu().String()).To(Equal(cpuRequest))
+			Expect(kruizeContainer.Resources.Limits.Cpu().String()).To(Equal(cpuLimit))
+			Expect(kruizeContainer.Resources.Requests.Memory().String()).To(Equal(memRequest))
+			Expect(kruizeContainer.Resources.Limits.Memory().String()).To(Equal(memLimit))
+
+			// Verify Database container resources
+			dbContainer := findContainerByName(dbDeployment.Spec.Template.Spec.Containers, "kruize-db")
+			Expect(dbContainer).NotTo(BeNil(), "expected to find kruize-db container")
+			Expect(dbContainer.Resources.Requests.Cpu().String()).To(Equal(cpuRequest))
+			Expect(dbContainer.Resources.Limits.Cpu().String()).To(Equal(cpuLimit))
+			Expect(dbContainer.Resources.Requests.Memory().String()).To(Equal(memRequest))
+			Expect(dbContainer.Resources.Limits.Memory().String()).To(Equal(memLimit))
+		})
+
+		It("should allow partial resource overrides while preserving defaults", func() {
+			// First, generate resources with default configuration to capture default resources
+			defaultGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, nil)
+			defaultNamespacedResources := defaultGenerator.NamespacedResources()
+
+			var defaultKruizeDeployment *appsv1.Deployment
+			var defaultDBDeployment *appsv1.Deployment
+
+			for _, obj := range defaultNamespacedResources {
+				deploy, ok := obj.(*appsv1.Deployment)
+				if !ok {
+					continue
+				}
+				switch deploy.Name {
+				case "kruize":
+					defaultKruizeDeployment = deploy
+				case "kruize-db-deployment":
+					defaultDBDeployment = deploy
+				}
+			}
+
+			Expect(defaultKruizeDeployment).NotTo(BeNil(), "default Kruize deployment should exist")
+			Expect(defaultDBDeployment).NotTo(BeNil(), "default DB deployment should exist")
+
+			defaultKruizeContainer := findContainerByName(defaultKruizeDeployment.Spec.Template.Spec.Containers, "kruize")
+			defaultDBContainer := findContainerByName(defaultDBDeployment.Spec.Template.Spec.Containers, "kruize-db")
+			Expect(defaultKruizeContainer).NotTo(BeNil(), "default kruize container should exist")
+			Expect(defaultDBContainer).NotTo(BeNil(), "default kruize-db container should exist")
+
+			// Now, create a ResourceConfig that only overrides the CPU request for both components
+			partialConfig := &kruizev1alpha1.ResourceConfig{
+				Database: &kruizev1alpha1.ContainerResources{
+					CPURequest: "250m",
+					// CPULimit, MemoryRequest, and MemoryLimit are intentionally omitted
+				},
+				Kruize: &kruizev1alpha1.ContainerResources{
+					CPURequest: "300m",
+					// CPULimit, MemoryRequest, and MemoryLimit are intentionally omitted
+				},
+			}
+
+			partialGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, partialConfig)
+			partialNamespacedResources := partialGenerator.NamespacedResources()
+
+			var partialKruizeDeployment *appsv1.Deployment
+			var partialDBDeployment *appsv1.Deployment
+
+			for _, obj := range partialNamespacedResources {
+				deploy, ok := obj.(*appsv1.Deployment)
+				if !ok {
+					continue
+				}
+				switch deploy.Name {
+				case "kruize":
+					partialKruizeDeployment = deploy
+				case "kruize-db-deployment":
+					partialDBDeployment = deploy
+				}
+			}
+
+			Expect(partialKruizeDeployment).NotTo(BeNil(), "partial Kruize deployment should exist")
+			Expect(partialDBDeployment).NotTo(BeNil(), "partial DB deployment should exist")
+
+			partialKruizeContainer := findContainerByName(partialKruizeDeployment.Spec.Template.Spec.Containers, "kruize")
+			partialDBContainer := findContainerByName(partialDBDeployment.Spec.Template.Spec.Containers, "kruize-db")
+			Expect(partialKruizeContainer).NotTo(BeNil(), "partial kruize container should exist")
+			Expect(partialDBContainer).NotTo(BeNil(), "partial kruize-db container should exist")
+
+			// Verify that the CPU request was overridden for DB
+			Expect(partialDBContainer.Resources.Requests.Cpu().String()).To(Equal("250m"))
+			// Verify that CPU limit and memory request/limit are still using the defaults for DB
+			Expect(partialDBContainer.Resources.Limits.Cpu().String()).To(Equal(defaultDBContainer.Resources.Limits.Cpu().String()))
+			Expect(partialDBContainer.Resources.Requests.Memory().String()).To(Equal(defaultDBContainer.Resources.Requests.Memory().String()))
+			Expect(partialDBContainer.Resources.Limits.Memory().String()).To(Equal(defaultDBContainer.Resources.Limits.Memory().String()))
+
+			// Verify that the CPU request was overridden for Kruize
+			Expect(partialKruizeContainer.Resources.Requests.Cpu().String()).To(Equal("300m"))
+			// Verify that CPU limit and memory request/limit are still using the defaults for Kruize
+			Expect(partialKruizeContainer.Resources.Limits.Cpu().String()).To(Equal(defaultKruizeContainer.Resources.Limits.Cpu().String()))
+			Expect(partialKruizeContainer.Resources.Requests.Memory().String()).To(Equal(defaultKruizeContainer.Resources.Requests.Memory().String()))
+			Expect(partialKruizeContainer.Resources.Limits.Memory().String()).To(Equal(defaultKruizeContainer.Resources.Limits.Memory().String()))
+		})
 	})
 
 	Context("RBAC and ConfigMap manifest generation", func() {
