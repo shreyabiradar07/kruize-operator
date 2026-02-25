@@ -201,7 +201,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
-          BRANCH_NAME="automated/update-kruize-versions-${{ github.run_number }}"
+          set -euo pipefail
+          
+          BRANCH_NAME="automated/v2-gh-api-kruize-versions-${{ github.run_number }}-${{ github.run_attempt }}"
           REPO="${{ github.repository }}"
           BASE_BRANCH="${{ github.ref_name }}"
           
@@ -209,14 +211,37 @@ jobs:
           BASE_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/repos/$REPO/git/ref/heads/$BASE_BRANCH" | jq -r '.object.sha')
           
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "null" ]; then
+            echo "Error: Failed to get base branch SHA"
+            exit 1
+          fi
+          
           echo "Base SHA: $BASE_SHA"
           
+          # Check if branch already exists
+          BRANCH_CHECK=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/git/ref/heads/$BRANCH_NAME")
+          
+          if [ "$BRANCH_CHECK" = "200" ]; then
+            echo "Error: Branch $BRANCH_NAME already exists. This should not happen with run_attempt in the name."
+            exit 1
+          fi
+          
           # Create a new branch
-          curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+          CREATE_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.github.com/repos/$REPO/git/refs" \
-            -d "{\"ref\":\"refs/heads/$BRANCH_NAME\",\"sha\":\"$BASE_SHA\"}"
+            -d "{\"ref\":\"refs/heads/$BRANCH_NAME\",\"sha\":\"$BASE_SHA\"}")
           
+          # Check if branch creation was successful
+          CREATE_STATUS=$(echo "$CREATE_RESPONSE" | jq -r '.ref // empty')
+          if [ -z "$CREATE_STATUS" ]; then
+            echo "Error: Failed to create branch. Response:"
+            echo "$CREATE_RESPONSE" | jq '.'
+            exit 1
+          fi
+          
+          echo "Successfully created branch: $BRANCH_NAME"
           echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
 
@@ -226,6 +251,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
+          set -euo pipefail
+          
           REPO="${{ github.repository }}"
           BRANCH_NAME="${{ steps.create-branch.outputs.branch_name }}"
           BASE_SHA="${{ steps.create-branch.outputs.base_sha }}"
@@ -234,16 +261,31 @@ jobs:
           BASE_TREE_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
             "https://api.github.com/repos/$REPO/git/commits/$BASE_SHA" | jq -r '.tree.sha')
           
+          if [ -z "$BASE_TREE_SHA" ] || [ "$BASE_TREE_SHA" = "null" ]; then
+            echo "Error: Failed to get base tree SHA from commit $BASE_SHA"
+            exit 1
+          fi
+          
           # Create blobs for updated files
           KRUIZE_IMAGES_BLOB=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.github.com/repos/$REPO/git/blobs" \
             -d "{\"content\":\"${{ steps.update-files.outputs.kruize_images_content }}\",\"encoding\":\"base64\"}" | jq -r '.sha')
           
+          if [ -z "$KRUIZE_IMAGES_BLOB" ] || [ "$KRUIZE_IMAGES_BLOB" = "null" ]; then
+            echo "Error: Failed to create blob for kruize_images.go"
+            exit 1
+          fi
+
           SAMPLE_YAML_BLOB=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.github.com/repos/$REPO/git/blobs" \
             -d "{\"content\":\"${{ steps.update-files.outputs.sample_yaml_content }}\",\"encoding\":\"base64\"}" | jq -r '.sha')
+          
+          if [ -z "$SAMPLE_YAML_BLOB" ] || [ "$SAMPLE_YAML_BLOB" = "null" ]; then
+            echo "Error: Failed to create blob for v1alpha1_kruize.yaml"
+            exit 1
+          fi
           
           # Create a new tree with updated files
           NEW_TREE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
@@ -257,10 +299,15 @@ jobs:
               ]
             }" | jq -r '.sha')
           
+          if [ -z "$NEW_TREE" ] || [ "$NEW_TREE" = "null" ]; then
+            echo "Error: Failed to create new tree"
+            exit 1
+          fi
+          
           # Create commit with sign-off
           # Use GitHub App bot identity for sign-off
           APP_ID="${{ secrets.APP_ID }}"
-          GH_APP_NAME="kruize-versions-sync"
+          GH_APP_NAME="kruize-version-sync"
           GH_APP_EMAIL="${APP_ID}+${GH_APP_NAME}[bot]@users.noreply.github.com"
           
           # Create commit message with sign-off (using printf to handle newlines)
@@ -280,11 +327,24 @@ jobs:
               --arg parent "$BASE_SHA" \
               '{message: $msg, tree: $tree, parents: [$parent]}')" | jq -r '.sha')
           
+          if [ -z "$NEW_COMMIT" ] || [ "$NEW_COMMIT" = "null" ]; then
+            echo "Error: Failed to create commit"
+            exit 1
+          fi
+          echo "Created commit: $NEW_COMMIT"
+          
           # Update branch reference
-          curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
+          UPDATE_RESPONSE=$(curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.github.com/repos/$REPO/git/refs/heads/$BRANCH_NAME" \
-            -d "{\"sha\":\"$NEW_COMMIT\",\"force\":false}"
+            -d "{\"sha\":\"$NEW_COMMIT\",\"force\":false}")
+          
+          UPDATE_STATUS=$(echo "$UPDATE_RESPONSE" | jq -r '.object.sha // empty')
+          if [ -z "$UPDATE_STATUS" ]; then
+            echo "Error: Failed to update branch reference. Response:"
+            echo "$UPDATE_RESPONSE" | jq '.'
+            exit 1
+          fi
           
           echo "commit_sha=$NEW_COMMIT" >> $GITHUB_OUTPUT
 
@@ -293,6 +353,8 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}
         run: |
+          set -euo pipefail
+          
           REPO="${{ github.repository }}"
           BRANCH_NAME="${{ steps.create-branch.outputs.branch_name }}"
           BASE_BRANCH="${{ github.ref_name }}"
@@ -320,13 +382,32 @@ jobs:
           PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
           PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
           
-          echo "Pull Request created: $PR_URL"
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            echo "Error: Failed to create pull request. Response:"
+            echo "$PR_RESPONSE" | jq '.'
+            exit 1
+          fi
+          
+          if [ -z "$PR_URL" ] || [ "$PR_URL" = "null" ]; then
+            echo "Error: Failed to get PR URL. Response:"
+            echo "$PR_RESPONSE" | jq '.'
+            exit 1
+          fi
+          
+          echo "Pull Request created: $PR_URL (PR #$PR_NUMBER)"
           
           # Add labels to the PR
-          curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+          LABEL_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
             "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/labels" \
-            -d '["automated","dependencies","kruize-version-update"]'
+            -d '["automated","dependencies","kruize-version-update"]')
+          
+          LABEL_COUNT=$(echo "$LABEL_RESPONSE" | jq 'length')
+          if [ "$LABEL_COUNT" -gt 0 ]; then
+            echo "Successfully added labels to PR #$PR_NUMBER"
+          else
+            echo "Warning: Failed to add labels to PR #$PR_NUMBER (non-fatal)"
+          fi
 
       - name: Summary
         if: always()
