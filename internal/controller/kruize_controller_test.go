@@ -65,6 +65,51 @@ func findContainerByName(containers []corev1.Container, name string) *corev1.Con
 	return nil
 }
 
+// Helper function to find a Deployment by name in a list of resources
+func findDeployment(resources []client.Object, name string) *appsv1.Deployment {
+	for _, resource := range resources {
+		if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == name {
+			if deployment, ok := resource.(*appsv1.Deployment); ok {
+				return deployment
+			}
+		}
+	}
+	return nil
+}
+
+// Helper function to find a PersistentVolume in a list of resources
+func findPersistentVolume(resources []client.Object) *corev1.PersistentVolume {
+	for _, resource := range resources {
+		if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
+			if pv, ok := resource.(*corev1.PersistentVolume); ok {
+				return pv
+			}
+		}
+	}
+	return nil
+}
+
+// Helper function to find a PersistentVolumeClaim in a list of resources
+func findPersistentVolumeClaim(resources []client.Object) *corev1.PersistentVolumeClaim {
+	for _, resource := range resources {
+		if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
+			if pvc, ok := resource.(*corev1.PersistentVolumeClaim); ok {
+				return pvc
+			}
+		}
+	}
+	return nil
+}
+
+// Helper function to get the first container from a deployment and verify it exists
+func getContainer(deployment *appsv1.Deployment, expectedName string) *corev1.Container {
+	Expect(deployment).NotTo(BeNil(), "Deployment should exist")
+	Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty(), "Deployment should have containers")
+	container := &deployment.Spec.Template.Spec.Containers[0]
+	Expect(container.Name).To(Equal(expectedName), "Container name should match")
+	return container
+}
+
 var _ = Describe("Kruize Controller", func() {
 	ctx := context.Background()
 
@@ -722,16 +767,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize deployment
-			var kruizeDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
-					var ok bool
-					kruizeDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
+			kruizeDeployment := findDeployment(namespacedResources, "kruize")
 			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
 			Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 			Expect(kruizeDeployment.Spec.Template.Spec.Containers[0].Name).To(Equal("kruize"))
@@ -763,16 +799,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize DB deployment
-			var kruizeDBDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-db-deployment" {
-					var ok bool
-					kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
+			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
 			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
 			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers[0].Name).To(Equal("kruize-db"))
@@ -792,16 +819,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize deployment
-			var kruizeDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
-					var ok bool
-					kruizeDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
+			kruizeDeployment := findDeployment(namespacedResources, "kruize")
 			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
 			Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 			
@@ -831,16 +849,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize DB deployment
-			var kruizeDBDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-db-deployment" {
-					var ok bool
-					kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
+			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
 			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
 			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 			
@@ -862,16 +871,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize deployment
-			var kruizeDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
-					var ok bool
-					kruizeDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
+			kruizeDeployment := findDeployment(namespacedResources, "kruize")
 			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
 			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
 			
@@ -897,16 +897,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize deployment
-			var kruizeDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
-					var ok bool
-					kruizeDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
+			kruizeDeployment := findDeployment(namespacedResources, "kruize")
 			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
 			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
 			
@@ -935,16 +926,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize DB deployment
-			var kruizeDBDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-db-deployment" {
-					var ok bool
-					kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
+			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
 			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
 			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 			
@@ -1051,16 +1033,7 @@ var _ = Describe("Kruize Controller", func() {
 			clusterResources := generator.ClusterScopedResources()
 
 			// Find the PV
-			var pv *corev1.PersistentVolume
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
-					var ok bool
-					pv, ok = resource.(*corev1.PersistentVolume)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
-					break
-				}
-			}
-
+			pv := findPersistentVolume(clusterResources)
 			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("2Gi"))
 			Expect(pv.Spec.StorageClassName).To(Equal("custom-storage"))
@@ -1068,16 +1041,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 
 			// Find the PVC
-			var pvc *corev1.PersistentVolumeClaim
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
-					var ok bool
-					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
-					break
-				}
-			}
-
+			pvc := findPersistentVolumeClaim(clusterResources)
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("custom-storage"))
@@ -1099,16 +1063,7 @@ var _ = Describe("Kruize Controller", func() {
 			clusterResources := generator.KubernetesClusterScopedResources()
 
 			// Find the PV
-			var pv *corev1.PersistentVolume
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
-					var ok bool
-					pv, ok = resource.(*corev1.PersistentVolume)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
-					break
-				}
-			}
-
+			pv := findPersistentVolume(clusterResources)
 			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("3Gi"))
 			Expect(pv.Spec.StorageClassName).To(Equal("k8s-storage"))
@@ -1116,16 +1071,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
 
 			// Find the PVC
-			var pvc *corev1.PersistentVolumeClaim
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
-					var ok bool
-					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
-					break
-				}
-			}
-
+			pvc := findPersistentVolumeClaim(clusterResources)
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("2Gi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("k8s-storage"))
@@ -1146,30 +1092,12 @@ var _ = Describe("Kruize Controller", func() {
 			clusterResources := generator.ClusterScopedResources()
 
 			// Find the PV
-			var pv *corev1.PersistentVolume
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
-					var ok bool
-					pv, ok = resource.(*corev1.PersistentVolume)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
-					break
-				}
-			}
-
+			pv := findPersistentVolume(clusterResources)
 			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("5Gi"))
 
 			// Find the PVC and verify it uses PVStorageSize
-			var pvc *corev1.PersistentVolumeClaim
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
-					var ok bool
-					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
-					break
-				}
-			}
-
+			pvc := findPersistentVolumeClaim(clusterResources)
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			// PVC should use PVStorageSize since PVCStorageSize was not specified
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("5Gi"))
@@ -1189,30 +1117,12 @@ var _ = Describe("Kruize Controller", func() {
 			clusterResources := generator.KubernetesClusterScopedResources()
 
 			// Find the PV
-			var pv *corev1.PersistentVolume
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
-					var ok bool
-					pv, ok = resource.(*corev1.PersistentVolume)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
-					break
-				}
-			}
-
+			pv := findPersistentVolume(clusterResources)
 			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("4Gi"))
 
 			// Find the PVC and verify it uses PVStorageSize
-			var pvc *corev1.PersistentVolumeClaim
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
-					var ok bool
-					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
-					break
-				}
-			}
-
+			pvc := findPersistentVolumeClaim(clusterResources)
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			// PVC should use PVStorageSize since PVCStorageSize was not specified
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("4Gi"))
@@ -1224,16 +1134,7 @@ var _ = Describe("Kruize Controller", func() {
 			clusterResources := generator.ClusterScopedResources()
 
 			// Find the PV
-			var pv *corev1.PersistentVolume
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
-					var ok bool
-					pv, ok = resource.(*corev1.PersistentVolume)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
-					break
-				}
-			}
-
+			pv := findPersistentVolume(clusterResources)
 			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("500Mi"))
 			Expect(pv.Spec.StorageClassName).To(Equal("manual"))
@@ -1241,16 +1142,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
 
 			// Find the PVC
-			var pvc *corev1.PersistentVolumeClaim
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
-					var ok bool
-					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
-					break
-				}
-			}
-
+			pvc := findPersistentVolumeClaim(clusterResources)
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("500Mi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("manual"))
@@ -1263,16 +1155,7 @@ var _ = Describe("Kruize Controller", func() {
 			clusterResources := generator.KubernetesClusterScopedResources()
 
 			// Find the PV
-			var pv *corev1.PersistentVolume
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolume" {
-					var ok bool
-					pv, ok = resource.(*corev1.PersistentVolume)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolume")
-					break
-				}
-			}
-
+			pv := findPersistentVolume(clusterResources)
 			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("1Gi"))
 			Expect(pv.Spec.StorageClassName).To(Equal("manual"))
@@ -1280,16 +1163,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 
 			// Find the PVC
-			var pvc *corev1.PersistentVolumeClaim
-			for _, resource := range clusterResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "PersistentVolumeClaim" {
-					var ok bool
-					pvc, ok = resource.(*corev1.PersistentVolumeClaim)
-					Expect(ok).To(BeTrue(), "Resource should be a valid PersistentVolumeClaim")
-					break
-				}
-			}
-
+			pvc := findPersistentVolumeClaim(clusterResources)
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("manual"))

@@ -200,7 +200,7 @@ func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, 
 func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
 	return g.getPVConfigWithDefaults(
 		constants.DefaultKubernetesPVStorageSize,
-		constants.DefaultOpenShiftStorageClassName,
+		constants.DefaultKubernetesStorageClassName,
 		constants.DefaultKubernetesHostPath,
 		[]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 	)

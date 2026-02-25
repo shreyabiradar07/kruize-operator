@@ -40,6 +40,8 @@ const (
 const (
 	// DefaultKubernetesPVStorageSize is the default PV storage size for Kubernetes/Minikube/Kind
 	DefaultKubernetesPVStorageSize = "1Gi"
+	// DefaultKubernetesStorageClassName is the default storage class for Kubernetes/Minikube/Kind
+	DefaultKubernetesStorageClassName = "manual"
 	// DefaultKubernetesHostPath is the default host path for Kubernetes PV
 	DefaultKubernetesHostPath = "/tmp/data"
 )
