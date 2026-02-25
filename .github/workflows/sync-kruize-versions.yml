@@ -167,6 +167,7 @@ jobs:
 
       - name: Update kruize_images.go and sample YAML
         if: steps.update-check.outputs.needs_update == 'true'
+        id: update-files
         run: |
           KRUIZE_VERSION="${{ steps.fetch-autotune-version.outputs.kruize_version }}"
           UI_VERSION="${{ steps.fetch-ui-version.outputs.ui_version }}"
@@ -187,28 +188,145 @@ jobs:
             echo "Updated UI version to $UI_VERSION"
           fi
 
-      - name: Create Pull Request
+          # Get base64 encoded content of updated files
+          KRUIZE_IMAGES_CONTENT=$(base64 -w 0 internal/constants/kruize_images.go)
+          SAMPLE_YAML_CONTENT=$(base64 -w 0 config/samples/v1alpha1_kruize.yaml)
+          
+          echo "kruize_images_content=$KRUIZE_IMAGES_CONTENT" >> $GITHUB_OUTPUT
+          echo "sample_yaml_content=$SAMPLE_YAML_CONTENT" >> $GITHUB_OUTPUT
+
+      - name: Create branch and commit using GitHub API
         if: steps.update-check.outputs.needs_update == 'true'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ steps.generate-token.outputs.token }}
-          commit-message: "build(deps): update Kruize versions to Autotune ${{ steps.fetch-autotune-version.outputs.kruize_version }} and UI ${{ steps.fetch-ui-version.outputs.ui_version }}"
-          title: "build(deps): update Kruize image versions"
-          body: |
-            ## Automated Version Update
-            
-            Updates Kruize image versions from upstream repositories.
-            
-            **Autotune**: ${{ steps.current-versions.outputs.current_autotune_version }} → ${{ steps.fetch-autotune-version.outputs.kruize_version }}
-            **UI**: ${{ steps.current-versions.outputs.current_ui_version }} → ${{ steps.fetch-ui-version.outputs.ui_version }}
-            
-            - Images verified on quay.io ✓
-          branch: automated/update-kruize-versions-${{ github.run_number }}
-          delete-branch: true
-          labels: |
-            automated
-            dependencies
-            kruize-version-update
+        id: create-branch
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        run: |
+          BRANCH_NAME="automated/update-kruize-versions-${{ github.run_number }}"
+          REPO="${{ github.repository }}"
+          BASE_BRANCH="${{ github.ref_name }}"
+          
+          # Get the SHA of the base branch
+          BASE_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/git/ref/heads/$BASE_BRANCH" | jq -r '.object.sha')
+          
+          echo "Base SHA: $BASE_SHA"
+          
+          # Create a new branch
+          curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/git/refs" \
+            -d "{\"ref\":\"refs/heads/$BRANCH_NAME\",\"sha\":\"$BASE_SHA\"}"
+          
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+
+      - name: Commit changes using GitHub API
+        if: steps.update-check.outputs.needs_update == 'true'
+        id: commit-changes
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          BRANCH_NAME="${{ steps.create-branch.outputs.branch_name }}"
+          BASE_SHA="${{ steps.create-branch.outputs.base_sha }}"
+          
+          # Get the base tree SHA
+          BASE_TREE_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/git/commits/$BASE_SHA" | jq -r '.tree.sha')
+          
+          # Create blobs for updated files
+          KRUIZE_IMAGES_BLOB=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/git/blobs" \
+            -d "{\"content\":\"${{ steps.update-files.outputs.kruize_images_content }}\",\"encoding\":\"base64\"}" | jq -r '.sha')
+          
+          SAMPLE_YAML_BLOB=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/git/blobs" \
+            -d "{\"content\":\"${{ steps.update-files.outputs.sample_yaml_content }}\",\"encoding\":\"base64\"}" | jq -r '.sha')
+          
+          # Create a new tree with updated files
+          NEW_TREE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/git/trees" \
+            -d "{
+              \"base_tree\":\"$BASE_TREE_SHA\",
+              \"tree\":[
+                {\"path\":\"internal/constants/kruize_images.go\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"$KRUIZE_IMAGES_BLOB\"},
+                {\"path\":\"config/samples/v1alpha1_kruize.yaml\",\"mode\":\"100644\",\"type\":\"blob\",\"sha\":\"$SAMPLE_YAML_BLOB\"}
+              ]
+            }" | jq -r '.sha')
+          
+          # Create commit with sign-off
+          # Use GitHub App bot identity for sign-off
+          APP_ID="${{ secrets.APP_ID }}"
+          GH_APP_NAME="kruize-versions-sync"
+          GH_APP_EMAIL="${APP_ID}+${GH_APP_NAME}[bot]@users.noreply.github.com"
+          
+          # Create commit message with sign-off (using printf to handle newlines)
+          COMMIT_MESSAGE=$(printf "build(deps): update Kruize versions to Autotune %s and UI %s\n\nSigned-off-by: %s <%s>" \
+            "${{ steps.fetch-autotune-version.outputs.kruize_version }}" \
+            "${{ steps.fetch-ui-version.outputs.ui_version }}" \
+            "${GH_APP_NAME}" \
+            "${GH_APP_EMAIL}")
+          
+          # Create the commit with properly escaped message
+          NEW_COMMIT=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/git/commits" \
+            -d "$(jq -n \
+              --arg msg "$COMMIT_MESSAGE" \
+              --arg tree "$NEW_TREE" \
+              --arg parent "$BASE_SHA" \
+              '{message: $msg, tree: $tree, parents: [$parent]}')" | jq -r '.sha')
+          
+          # Update branch reference
+          curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/git/refs/heads/$BRANCH_NAME" \
+            -d "{\"sha\":\"$NEW_COMMIT\",\"force\":false}"
+          
+          echo "commit_sha=$NEW_COMMIT" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request using GitHub API
+        if: steps.update-check.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          BRANCH_NAME="${{ steps.create-branch.outputs.branch_name }}"
+          BASE_BRANCH="${{ github.ref_name }}"
+          
+          PR_BODY="## Automated Version Update
+
+          Updates Kruize image versions from upstream repositories.
+
+          **Autotune**: ${{ steps.current-versions.outputs.current_autotune_version }} → ${{ steps.fetch-autotune-version.outputs.kruize_version }}
+          **UI**: ${{ steps.current-versions.outputs.current_ui_version }} → ${{ steps.fetch-ui-version.outputs.ui_version }}
+
+          - Images verified on quay.io ✓"
+          
+          # Create pull request
+          PR_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/pulls" \
+            -d "{
+              \"title\":\"build(deps): update Kruize image versions\",
+              \"body\":$(echo "$PR_BODY" | jq -Rs .),
+              \"head\":\"$BRANCH_NAME\",
+              \"base\":\"$BASE_BRANCH\"
+            }")
+          
+          PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
+          PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
+          
+          echo "Pull Request created: $PR_URL"
+          
+          # Add labels to the PR
+          curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/labels" \
+            -d '["automated","dependencies","kruize-version-update"]'
 
       - name: Summary
         if: always()
