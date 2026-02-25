@@ -134,13 +134,27 @@ func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequiremen
 	}
 }
 
-// getPVConfig returns PV configuration with defaults for OpenShift
-func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
-	pvStorageSize = constants.DefaultOpenShiftPVStorageSize
-	pvcStorageSize = constants.DefaultOpenShiftPVStorageSize
-	storageClassName = constants.DefaultOpenShiftStorageClassName
-	hostPath = constants.DefaultOpenShiftHostPath
-	accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}
+// isValidAccessMode validates if the given access mode is a valid Kubernetes PersistentVolume access mode
+func isValidAccessMode(mode string) bool {
+	validModes := map[string]bool{
+		string(corev1.ReadWriteOnce):    true,
+		string(corev1.ReadOnlyMany):     true,
+		string(corev1.ReadWriteMany):    true,
+		string(corev1.ReadWriteOncePod): true,
+	}
+	return validModes[mode]
+}
+
+// getPVConfigWithDefaults is a shared helper that returns PV configuration with injected defaults
+func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
+	defaultPVStorageSize, defaultStorageClassName, defaultHostPath string,
+	defaultAccessModes []corev1.PersistentVolumeAccessMode,
+) (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+	pvStorageSize = defaultPVStorageSize
+	pvcStorageSize = defaultPVStorageSize
+	storageClassName = defaultStorageClassName
+	hostPath = defaultHostPath
+	accessModes = defaultAccessModes
 
 	if g.ResourceConfig != nil && g.ResourceConfig.PersistentVolume != nil {
 		pv := g.ResourceConfig.PersistentVolume
@@ -157,7 +171,14 @@ func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, 
 		if len(pv.AccessModes) > 0 {
 			accessModes = []corev1.PersistentVolumeAccessMode{}
 			for _, mode := range pv.AccessModes {
-				accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
+				// Validate access mode before adding
+				if isValidAccessMode(mode) {
+					accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
+				}
+			}
+			// If no valid access modes were provided, fall back to defaults
+			if len(accessModes) == 0 {
+				accessModes = defaultAccessModes
 			}
 		}
 	}
@@ -165,35 +186,24 @@ func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, 
 	return pvStorageSize, pvcStorageSize, storageClassName, hostPath, accessModes
 }
 
+// getPVConfig returns PV configuration with defaults for OpenShift
+func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+	return g.getPVConfigWithDefaults(
+		constants.DefaultOpenShiftPVStorageSize,
+		constants.DefaultOpenShiftStorageClassName,
+		constants.DefaultOpenShiftHostPath,
+		[]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+	)
+}
+
 // getPVConfigKubernetes returns PV configuration with defaults for Kubernetes/Kind/Minikube
 func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
-	pvStorageSize = constants.DefaultKubernetesPVStorageSize
-	pvcStorageSize = constants.DefaultKubernetesPVStorageSize
-	storageClassName = constants.DefaultOpenShiftStorageClassName
-	hostPath = constants.DefaultKubernetesHostPath
-	accessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
-
-	if g.ResourceConfig != nil && g.ResourceConfig.PersistentVolume != nil {
-		pv := g.ResourceConfig.PersistentVolume
-		pvStorageSize = g.getResourceValue(pv.PVStorageSize, pvStorageSize)
-		// If PVCStorageSize is not set, use PVStorageSize
-		if pv.PVCStorageSize != "" {
-			pvcStorageSize = pv.PVCStorageSize
-		} else {
-			pvcStorageSize = pvStorageSize
-		}
-		storageClassName = g.getResourceValue(pv.StorageClassName, storageClassName)
-		hostPath = g.getResourceValue(pv.HostPath, hostPath)
-
-		if len(pv.AccessModes) > 0 {
-			accessModes = []corev1.PersistentVolumeAccessMode{}
-			for _, mode := range pv.AccessModes {
-				accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
-			}
-		}
-	}
-
-	return pvStorageSize, pvcStorageSize, storageClassName, hostPath, accessModes
+	return g.getPVConfigWithDefaults(
+		constants.DefaultKubernetesPVStorageSize,
+		constants.DefaultOpenShiftStorageClassName,
+		constants.DefaultKubernetesHostPath,
+		[]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+	)
 }
 
 // ClusterScopedResources generates all cluster-scoped resources for Kruize.

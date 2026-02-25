@@ -104,7 +104,9 @@ type PersistentVolumeConfig struct {
 	HostPath string `json:"hostPath,omitempty"`
 
 	// Access modes for the persistent volume
+	// Valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
 	// +optional
+	// +kubebuilder:validation:Enum=ReadWriteOnce;ReadOnlyMany;ReadWriteMany;ReadWriteOncePod
 	AccessModes []string `json:"accessModes,omitempty"`
 }
 
