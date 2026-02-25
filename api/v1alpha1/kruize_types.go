@@ -106,7 +106,6 @@ type PersistentVolumeConfig struct {
 	// Access modes for the persistent volume
 	// Valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
 	// +optional
-	// +kubebuilder:validation:Enum=ReadWriteOnce;ReadOnlyMany;ReadWriteMany;ReadWriteOncePod
 	AccessModes []string `json:"accessModes,omitempty"`
 }
 

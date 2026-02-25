@@ -96,11 +96,6 @@ spec:
                         description: |-
                           Access modes for the persistent volume
                           Valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
-                        enum:
-                        - ReadWriteOnce
-                        - ReadOnlyMany
-                        - ReadWriteMany
-                        - ReadWriteOncePod
                         items:
                           type: string
                         type: array
