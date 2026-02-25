@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 
 	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
@@ -17,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func boolPtr(b bool) *bool {
@@ -34,10 +36,11 @@ type KruizeResourceGenerator struct {
 	Autotune_ui_image string
 	ClusterType       string // "openshift", "minikube", or "kind"
 	ResourceConfig    *kruizev1alpha1.ResourceConfig
+	Ctx               context.Context
 }
 
 // NewKruizeResourceGenerator creates a new generator for Kruize resources.
-func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string, resourceConfig *kruizev1alpha1.ResourceConfig) *KruizeResourceGenerator {
+func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string, resourceConfig *kruizev1alpha1.ResourceConfig, ctx context.Context) *KruizeResourceGenerator {
 	// If no image is provided from the CR, use a sensible default.
 	// The default can be configured via environment variables:
 	// - DEFAULT_AUTOTUNE_IMAGE: Override the default Autotune image
@@ -57,6 +60,7 @@ func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotune
 		Autotune_ui_image: autotuneUIImage,
 		ClusterType:       clusterType,
 		ResourceConfig:    resourceConfig,
+		Ctx:               ctx,
 	}
 }
 
@@ -69,15 +73,21 @@ func (g *KruizeResourceGenerator) getResourceValue(configValue, defaultValue str
 }
 
 // parseResourceQuantity safely parses a resource quantity string.
-// If parsing the user-provided value fails, it falls back to the default value.
-func parseResourceQuantity(value, defaultValue string) resource.Quantity {
+// If parsing the user-provided value fails, it falls back to the default value and logs a warning.
+func (g *KruizeResourceGenerator) parseResourceQuantity(value, defaultValue string) resource.Quantity {
 	// Parse the user-provided value first
 	quantity, err := resource.ParseQuantity(value)
 	if err == nil {
 		return quantity
 	}
 	
-	// If user value is invalid, fall back to the default value
+	// If user value is invalid, log a warning and fall back to the default value
+	logger := log.FromContext(g.Ctx)
+	logger.Info("Invalid resource quantity specified, falling back to default",
+		"provided", value,
+		"default", defaultValue,
+		"error", err.Error())
+	
 	// The default values are hardcoded constants, so MustParse is safe here
 	return resource.MustParse(defaultValue)
 }
@@ -98,12 +108,12 @@ func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
 
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: parseResourceQuantity(memoryRequest, constants.DefaultDBMemoryRequest),
-			corev1.ResourceCPU:    parseResourceQuantity(cpuRequest, constants.DefaultDBCPURequest),
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryRequest, constants.DefaultDBMemoryRequest),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuRequest, constants.DefaultDBCPURequest),
 		},
 		Limits: corev1.ResourceList{
-			corev1.ResourceMemory: parseResourceQuantity(memoryLimit, constants.DefaultDBMemoryLimit),
-			corev1.ResourceCPU:    parseResourceQuantity(cpuLimit, constants.DefaultDBCPULimit),
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryLimit, constants.DefaultDBMemoryLimit),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuLimit, constants.DefaultDBCPULimit),
 		},
 	}
 }
@@ -124,25 +134,37 @@ func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequiremen
 
 	return corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: parseResourceQuantity(memoryRequest, constants.DefaultKruizeMemoryRequest),
-			corev1.ResourceCPU:    parseResourceQuantity(cpuRequest, constants.DefaultKruizeCPURequest),
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryRequest, constants.DefaultKruizeMemoryRequest),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuRequest, constants.DefaultKruizeCPURequest),
 		},
 		Limits: corev1.ResourceList{
-			corev1.ResourceMemory: parseResourceQuantity(memoryLimit, constants.DefaultKruizeMemoryLimit),
-			corev1.ResourceCPU:    parseResourceQuantity(cpuLimit, constants.DefaultKruizeCPULimit),
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryLimit, constants.DefaultKruizeMemoryLimit),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuLimit, constants.DefaultKruizeCPULimit),
 		},
 	}
 }
 
 // isValidAccessMode validates if the given access mode is a valid Kubernetes PersistentVolume access mode
-func isValidAccessMode(mode string) bool {
+func (g *KruizeResourceGenerator) isValidAccessMode(mode string) bool {
 	validModes := map[string]bool{
 		string(corev1.ReadWriteOnce):    true,
 		string(corev1.ReadOnlyMany):     true,
 		string(corev1.ReadWriteMany):    true,
 		string(corev1.ReadWriteOncePod): true,
 	}
-	return validModes[mode]
+	isValid := validModes[mode]
+	if !isValid {
+		logger := log.FromContext(g.Ctx)
+		logger.Info("Invalid access mode specified, will be ignored",
+			"provided", mode,
+			"validModes", []string{
+				string(corev1.ReadWriteOnce),
+				string(corev1.ReadOnlyMany),
+				string(corev1.ReadWriteMany),
+				string(corev1.ReadWriteOncePod),
+			})
+	}
+	return isValid
 }
 
 // getPVConfigWithDefaults is a shared helper that returns PV configuration with injected defaults
@@ -172,12 +194,15 @@ func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
 			accessModes = []corev1.PersistentVolumeAccessMode{}
 			for _, mode := range pv.AccessModes {
 				// Validate access mode before adding
-				if isValidAccessMode(mode) {
+				if g.isValidAccessMode(mode) {
 					accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
 				}
 			}
 			// If no valid access modes were provided, fall back to defaults
 			if len(accessModes) == 0 {
+				logger := log.FromContext(g.Ctx)
+				logger.Info("No valid access modes provided, falling back to defaults",
+					"defaultAccessModes", defaultAccessModes)
 				accessModes = defaultAccessModes
 			}
 		}
@@ -434,7 +459,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentV
 		Spec: corev1.PersistentVolumeSpec{
 			StorageClassName: storageClassName,
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: parseResourceQuantity(pvStorageSize, constants.DefaultOpenShiftPVStorageSize),
+				corev1.ResourceStorage: g.parseResourceQuantity(pvStorageSize, constants.DefaultOpenShiftPVStorageSize),
 			},
 			AccessModes: accessModes,
 			// The HostPath must be nested inside the PersistentVolumeSource struct.
@@ -468,7 +493,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaim() *corev1.Persis
 			AccessModes:      accessModes,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: parseResourceQuantity(pvcStorageSize, constants.DefaultOpenShiftPVStorageSize),
+					corev1.ResourceStorage: g.parseResourceQuantity(pvcStorageSize, constants.DefaultOpenShiftPVStorageSize),
 				},
 			},
 		},
@@ -1082,7 +1107,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 		Spec: corev1.PersistentVolumeSpec{
 			StorageClassName: storageClassName,
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: parseResourceQuantity(pvStorageSize, constants.DefaultKubernetesPVStorageSize),
+				corev1.ResourceStorage: g.parseResourceQuantity(pvStorageSize, constants.DefaultKubernetesPVStorageSize),
 			},
 			AccessModes:                   accessModes,
 			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
@@ -1113,7 +1138,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *cor
 			AccessModes:      accessModes,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: parseResourceQuantity(pvcStorageSize, constants.DefaultKubernetesPVStorageSize),
+					corev1.ResourceStorage: g.parseResourceQuantity(pvcStorageSize, constants.DefaultKubernetesPVStorageSize),
 				},
 			},
 		},
