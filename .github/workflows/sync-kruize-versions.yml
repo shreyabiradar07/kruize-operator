@@ -44,7 +44,7 @@ jobs:
           # Fetch the pom.xml from kruize/autotune master branch and extract /project/version
           # Using local-name() to handle XML namespaces
           KRUIZE_VERSION=$(
-            curl -s https://raw.githubusercontent.com/shreyabiradar07/autotune/master/pom.xml \
+            curl -s https://raw.githubusercontent.com/kruize/autotune/master/pom.xml \
             | xmllint --xpath '//*[local-name()="project"]/*[local-name()="version"]/text()' - 2>/dev/null
           )
           
@@ -100,7 +100,7 @@ jobs:
           
           # Check Autotune image
           KRUIZE_VERSION="${{ steps.fetch-autotune-version.outputs.kruize_version }}"
-          if check_quay_image "shbirada/autotune_operator" "$KRUIZE_VERSION" "Autotune"; then
+          if check_quay_image "kruize/autotune_operator" "$KRUIZE_VERSION" "Autotune"; then
             echo "autotune_available=true" >> $GITHUB_OUTPUT
           else
             echo "autotune_available=false" >> $GITHUB_OUTPUT
