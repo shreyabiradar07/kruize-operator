@@ -124,6 +124,34 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	fmt.Println("kruize object base: ", kruize.Spec)
 
+	// Check if the Kruize instance is marked for deletion
+	if kruize.GetDeletionTimestamp() != nil {
+		if controllerutil.ContainsFinalizer(kruize, kruizeFinalizer) {
+			// Run finalization logic
+			if err := r.finalizeKruize(ctx, kruize); err != nil {
+				logger.Error(err, "Failed to finalize Kruize")
+				return ctrl.Result{}, err
+			}
+
+			// Remove finalizer to allow deletion
+			controllerutil.RemoveFinalizer(kruize, kruizeFinalizer)
+			if err := r.Update(ctx, kruize); err != nil {
+				logger.Error(err, "Failed to remove finalizer")
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if it doesn't exist
+	if !controllerutil.ContainsFinalizer(kruize, kruizeFinalizer) {
+		controllerutil.AddFinalizer(kruize, kruizeFinalizer)
+		if err := r.Update(ctx, kruize); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Call your deployment function with proper error handling
 	err = r.deployKruize(ctx, kruize)
 	if err != nil {
@@ -144,6 +172,105 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	logger.Info("All Kruize pods are ready!", "namespace", targetNamespace)
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+}
+
+// finalizeKruize cleans up all resources created by the operator
+func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1alpha1.Kruize) error {
+	logger := log.FromContext(ctx)
+
+	logger.Info("Finalizing Kruize, cleaning up all resources", "namespace", kruize.Spec.Namespace)
+
+	// Get the cluster type to determine which resources to clean up
+	clusterType := kruize.Spec.Cluster_type
+	if !constants.IsValidClusterType(clusterType) {
+		clusterType = constants.ClusterTypeOpenShift // Default to openshift
+	}
+
+	// Create a generator to get the resource names
+	k8sObjectGenerator := utils.NewKruizeResourceGenerator(
+		kruize.Spec.Namespace,
+		kruize.Spec.Autotune_image,
+		kruize.Spec.Autotune_ui_image,
+		clusterType,
+	)
+
+	// Delete namespace-scoped resources first
+	namespacedResources := k8sObjectGenerator.NamespacedResources()
+	logger.Info("Deleting namespace-scoped resources", "count", len(namespacedResources))
+	for _, obj := range namespacedResources {
+		if err := r.deleteResource(ctx, obj); err != nil {
+			logger.Error(err, "Failed to delete namespace-scoped resource",
+				"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
+				"Name", obj.GetName(),
+				"Namespace", obj.GetNamespace())
+			// Continue with other resources even if one fails
+		}
+	}
+
+	// List of cluster-scoped resources to delete
+	var clusterScopedResources []client.Object
+	if clusterType == constants.ClusterTypeOpenShift {
+		clusterScopedResources = k8sObjectGenerator.ClusterScopedResources()
+	} else {
+		clusterScopedResources = k8sObjectGenerator.KubernetesClusterScopedResources()
+	}
+
+	// Delete each cluster-scoped resource
+	logger.Info("Deleting cluster-scoped resources", "count", len(clusterScopedResources))
+	for _, obj := range clusterScopedResources {
+		if err := r.deleteResource(ctx, obj); err != nil {
+			logger.Error(err, "Failed to delete cluster-scoped resource",
+				"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
+				"Name", obj.GetName())
+			// Continue with other resources even if one fails
+		}
+	}
+
+	logger.Info("Successfully cleaned up all resources")
+	return nil
+}
+
+// deleteResource deletes a resource (cluster-scoped or namespace-scoped) if it exists
+func (r *KruizeReconciler) deleteResource(ctx context.Context, obj client.Object) error {
+	logger := log.FromContext(ctx)
+
+	// Try to get the resource first
+	found := obj.DeepCopyObject().(client.Object)
+	err := r.Get(ctx, client.ObjectKeyFromObject(obj), found)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Resource doesn't exist, nothing to delete
+			logger.Info("Resource not found, skipping deletion",
+				"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
+				"Name", obj.GetName(),
+				"Namespace", obj.GetNamespace())
+			return nil
+		}
+		return fmt.Errorf("failed to get resource %s %s: %w",
+			obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err)
+	}
+
+	// Delete the resource
+	logger.Info("Deleting resource",
+		"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
+		"Name", obj.GetName(),
+		"Namespace", obj.GetNamespace())
+
+	if err := r.Delete(ctx, found); err != nil {
+		if errors.IsNotFound(err) {
+			// Already deleted, that's fine
+			return nil
+		}
+		return fmt.Errorf("failed to delete resource %s %s: %w",
+			obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err)
+	}
+
+	logger.Info("Successfully deleted resource",
+		"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
+		"Name", obj.GetName(),
+		"Namespace", obj.GetNamespace())
+	return nil
 }
 
 // isTestMode checks if the controller is running in test mode
@@ -239,7 +366,7 @@ func (r *KruizeReconciler) checkKruizePodsStatus(ctx context.Context, namespace 
 
 func (r *KruizeReconciler) deployKruize(ctx context.Context, kruize *kruizev1alpha1.Kruize) error {
 	logger := log.FromContext(ctx)
-	
+
 	// Log Kruize spec configuration
 	logger.Info("Deploying Kruize",
 		"cluster_type", kruize.Spec.Cluster_type,
@@ -290,18 +417,17 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 		ctx,
 	)
 
-
 	// Reconcile cluster-scoped resources based on cluster type
 	var clusterScopedObjects []client.Object
 	var configmap client.Object
 
 	if clusterType == constants.ClusterTypeOpenShift {
 		// OpenShift-specific resources
-	       	kruizeServiceAccount := k8sObjectGenerator.KruizeServiceAccount()
-	       	if err := r.reconcileClusterResource(ctx, kruizeServiceAccount); err != nil {
-	           		logger.Error(err, "Failed to reconcile kruize service account")
-	           		return err
-	       	}
+		kruizeServiceAccount := k8sObjectGenerator.KruizeServiceAccount()
+		if err := r.reconcileClusterResource(ctx, kruizeServiceAccount); err != nil {
+			logger.Error(err, "Failed to reconcile kruize service account")
+			return err
+		}
 
 		clusterScopedObjects = k8sObjectGenerator.ClusterScopedResources()
 		configmap = k8sObjectGenerator.KruizeConfigMap()
