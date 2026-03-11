@@ -836,8 +836,6 @@ var _ = Describe("Kruize Controller", func() {
                 defer resp.Body.Close()
 
                 By("verifying the metrics server intercepted the request")
-                // Accepting 401/403 (Real Cluster) or 500 (EnvTest limitation)
-                // All three prove the filter is protecting the endpoint.
                 if os.Getenv("KRUIZE_TEST_MODE") == "true" {
                     // In envtest mode we explicitly expect the known 500 behavior,
                     // rather than treating any 500 as success.
