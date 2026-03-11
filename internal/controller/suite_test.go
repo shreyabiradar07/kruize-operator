@@ -87,15 +87,15 @@ var _ = BeforeSuite(func() {
 	// ADDED FOR NATIVE METRICS AUTH TESTING
 	By("starting the manager with native metrics auth")
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-	    Scheme: scheme.Scheme,
-	    Metrics: utils.GetMetricsOptions("127.0.0.1:8443", true, false),
+		Scheme:  scheme.Scheme,
+		Metrics: utils.GetMetricsOptions("127.0.0.1:8443", true, false),
 	})
 
 	Expect(err).ToNot(HaveOccurred())
 	go func() {
-	    defer GinkgoRecover()
-	    err = mgr.Start(ctrl.SetupSignalHandler())
-	    Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+		defer GinkgoRecover()
+		err = mgr.Start(ctrl.SetupSignalHandler())
+		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 })
 
