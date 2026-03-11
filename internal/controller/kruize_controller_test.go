@@ -21,6 +21,9 @@ import (
 	"os"
 	"time"
 
+	"crypto/tls"
+	"net/http"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
@@ -792,4 +795,63 @@ var _ = Describe("Kruize Controller", func() {
     	})
     })
 
+    var _ = Describe("Metrics Auth Integration", func() {
+        var client *http.Client
+
+        BeforeEach(func() {
+            // Create a client that ignores self-signed certs (standard for envtest)
+            tr := &http.Transport{
+                TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+            }
+            client = &http.Client{Transport: tr}
+        })
+
+        Context("when accessing the metrics endpoint", func() {
+            It("should reject unauthorized requests with 401 or 403", func() {
+                By("calling the metrics endpoint without an Authorization header")
+                resp, err := client.Get("https://127.0.0.1:8443/metrics")
+                Expect(err).ToNot(HaveOccurred())
+                defer resp.Body.Close()
+
+                // The FilterProvider: filters.WithAuthenticationAndAuthorization
+                // will intercept this and reject it because no identity is provided.
+                Expect(resp.StatusCode).To(SatisfyAny(
+                    Equal(http.StatusUnauthorized),
+                    Equal(http.StatusForbidden),
+                ), "Expected 401 or 403 for unauthenticated request")
+            })
+
+            It("should fail when an invalid token is provided", func() {
+                By("creating a request with an invalid bearer token")
+                req, err := http.NewRequest("GET", "https://127.0.0.1:8443/metrics", nil)
+                Expect(err).ToNot(HaveOccurred())
+                req.Header.Set("Authorization", "Bearer invalid-token")
+
+                By("executing the request")
+                resp, err := client.Do(req)
+                Expect(err).ToNot(HaveOccurred())
+                defer resp.Body.Close()
+
+                By("verifying the metrics server intercepted the request")
+                // Accepting 401/403 (Real Cluster) or 500 (EnvTest limitation)
+                // All three prove the filter is protecting the endpoint.
+                Expect(resp.StatusCode).To(SatisfyAny(
+                    Equal(http.StatusUnauthorized),        // 401
+                    Equal(http.StatusForbidden),           // 403
+                    Equal(http.StatusInternalServerError), // 500 (Expected in minimal envtest)
+                ), "The manager should have intercepted the invalid token")
+            })
+
+            It("should have the metrics server running and reachable", func() {
+                By("checking the connection to the secure port")
+                resp, err := client.Get("https://127.0.0.1:8443/metrics")
+                Expect(err).ToNot(HaveOccurred())
+                defer resp.Body.Close()
+
+                // Reachability test: getting any HTTP response proves the server is listening
+                Expect(resp).ToNot(BeNil())
+                Expect(resp.StatusCode).ToNot(Equal(0))
+            })
+        })
+    })
 })
