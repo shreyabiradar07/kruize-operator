@@ -32,8 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"github.com/kruize/kruize-operator/internal/utils"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
@@ -89,11 +88,7 @@ var _ = BeforeSuite(func() {
 	By("starting the manager with native metrics auth")
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 	    Scheme: scheme.Scheme,
-	    Metrics: metricsserver.Options{
-	        BindAddress:    "127.0.0.1:8443", // Use localhost for envtest
-	        SecureServing:  true,
-	        FilterProvider: filters.WithAuthenticationAndAuthorization,
-	    },
+	    Metrics: utils.GetMetricsOptions("127.0.0.1:8443", true, false),
 	})
 
 	Expect(err).ToNot(HaveOccurred())
