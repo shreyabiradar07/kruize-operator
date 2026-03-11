@@ -88,7 +88,7 @@ var _ = BeforeSuite(func() {
 	By("starting the manager with native metrics auth")
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme:  scheme.Scheme,
-		Metrics: utils.GetMetricsOptions("127.0.0.1:8443", true, false),
+		Metrics: utils.GetMetricsOptions(utils.LocalMetricsAddr, true, false),
 	})
 
 	Expect(err).ToNot(HaveOccurred())

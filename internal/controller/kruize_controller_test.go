@@ -20,6 +20,7 @@ import (
 	"context"
 	"os"
 	"time"
+	"fmt"
 
 	"crypto/tls"
 	"net/http"
@@ -811,7 +812,8 @@ var _ = Describe("Kruize Controller", func() {
                 By("calling the metrics endpoint until it is ready")
 
                 Eventually(func() (int, error) {
-                    resp, err := client.Get("https://127.0.0.1:8443/metrics")
+                    metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
+                    resp, err := client.Get(metricsURL)
                     if err != nil {
                         return 0, err // Return error to trigger a retry
                     }
@@ -826,7 +828,8 @@ var _ = Describe("Kruize Controller", func() {
 
             It("should fail when an invalid token is provided", func() {
                 By("creating a request with an invalid bearer token")
-                req, err := http.NewRequest("GET", "https://127.0.0.1:8443/metrics", nil)
+                metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
+                req, err := http.NewRequest("GET", metricsURL, nil)
                 Expect(err).ToNot(HaveOccurred())
                 req.Header.Set("Authorization", "Bearer invalid-token")
 
@@ -852,14 +855,30 @@ var _ = Describe("Kruize Controller", func() {
             })
 
             It("should have the metrics server running and reachable", func() {
-                By("checking the connection to the secure port")
-                resp, err := client.Get("https://127.0.0.1:8443/metrics")
-                Expect(err).ToNot(HaveOccurred())
-                defer resp.Body.Close()
+                checkMetricsReachable := func() error {
+                    metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
+                    resp, err := client.Get(metricsURL)
+                    if err != nil {
+                        return err
+                    }
+                    defer resp.Body.Close()
 
-                // Reachability test: getting any HTTP response proves the server is listening
-                Expect(resp).ToNot(BeNil())
-                Expect(resp.StatusCode).ToNot(Equal(0))
+                    // Reachability test: getting any HTTP response proves the server is listening
+                    if resp == nil {
+                        return fmt.Errorf("expected non-nil response from metrics endpoint")
+                    }
+                    if resp.StatusCode == 0 {
+                        return fmt.Errorf("expected non-zero HTTP status code from metrics endpoint")
+                    }
+
+                    return nil
+                }
+
+                By("waiting for the metrics server to become reachable on the secure port")
+                Eventually(checkMetricsReachable).Should(Succeed())
+
+                By("verifying the metrics server remains reachable on the secure port")
+                Consistently(checkMetricsReachable).Should(Succeed())
             })
         })
     })

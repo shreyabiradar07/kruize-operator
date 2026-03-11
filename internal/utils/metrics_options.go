@@ -11,6 +11,17 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+const (
+	// DefaultMetricsPort is the numeric port we use
+    DefaultMetricsPort = "8443"
+
+    // DefaultMetricsAddr is used by main.go (binds to everything)
+    DefaultMetricsAddr = ":" + DefaultMetricsPort
+
+    // LocalMetricsAddr is used by tests (binds to localhost)
+    LocalMetricsAddr = "127.0.0.1:" + DefaultMetricsPort
+)
+
 // GetTLSOpts returns the TLS configuration slice for both Webhooks and Metrics.
 func GetTLSOpts(enableHTTP2 bool) []func(*tls.Config) {
 
@@ -32,12 +43,21 @@ func GetTLSOpts(enableHTTP2 bool) []func(*tls.Config) {
 	return tlsOpts
 }
 
-// GetMetricsOptions now uses the helper above.
+// GetMetricsOptions returns a consistent metrics configuration.
+// It applies Authentication and Authorization filters ONLY if secure is true.
 func GetMetricsOptions(addr string, secure bool, enableHTTP2 bool) metricsserver.Options {
-	return metricsserver.Options{
-		BindAddress:    addr,
-		SecureServing:  secure,
-		TLSOpts:        GetTLSOpts(enableHTTP2),
-		FilterProvider: filters.WithAuthenticationAndAuthorization,
+	options := metricsserver.Options{
+		BindAddress:   addr,
+		SecureServing: secure,
 	}
+
+	if secure {
+		// Only enable the guard if the endpoint is secure
+		options.FilterProvider = filters.WithAuthenticationAndAuthorization
+
+		// Configure TLS options only for secure endpoints
+		options.TLSOpts = GetTLSOpts(enableHTTP2)
+	}
+
+	return options
 }
