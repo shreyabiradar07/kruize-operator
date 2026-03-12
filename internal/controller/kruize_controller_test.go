@@ -811,22 +811,73 @@ var _ = Describe("Kruize Controller", func() {
             It("should reject unauthorized requests", func() {
                 By("calling the metrics endpoint until it is ready")
 
-                Eventually(func() (int, error) {
-                    metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
-                    resp, err := client.Get(metricsURL)
-                    if err != nil {
-                        return 0, err // Return error to trigger a retry
-                    }
-                    defer resp.Body.Close()
-                    return resp.StatusCode, nil
-                }, "10s", "1s").Should(SatisfyAny(
-                    Equal(http.StatusUnauthorized),
-                    Equal(http.StatusForbidden),
-                    Equal(http.StatusInternalServerError),
-                ), "The metrics server should eventually be reachable and reject the unauthorized request")
+                testMode := os.Getenv("KRUIZE_TEST_MODE")
+
+                if testMode == "true" {
+                    Eventually(func() (int, error) {
+                        metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
+                        resp, err := client.Get(metricsURL)
+                        if err != nil {
+                            return 0, err // Return error to trigger a retry
+                        }
+                        defer resp.Body.Close()
+                        return resp.StatusCode, nil
+                    }, "10s", "1s").Should(SatisfyAny(
+                        Equal(http.StatusUnauthorized),
+                        Equal(http.StatusForbidden),
+                        Equal(http.StatusInternalServerError),
+                    ), "The metrics server should eventually be reachable and reject the unauthorized request in envtest")
+                } else {
+                    // In real clusters, 500 usually indicates misconfiguration, so do not accept it
+                    Eventually(func() (int, error) {
+                        metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
+                        resp, err := client.Get(metricsURL)
+                        if err != nil {
+                            return 0, err // Return error to trigger a retry
+                        }
+                        defer resp.Body.Close()
+                        return resp.StatusCode, nil
+                    }, "10s", "1s").Should(SatisfyAny(
+                        Equal(http.StatusUnauthorized),
+                        Equal(http.StatusForbidden),
+                    ), "The metrics server should eventually be reachable and reject the unauthorized request in real-cluster mode")
+                }
             })
 
             It("should fail when an invalid token is provided", func() {
+                By("waiting for the metrics server to be ready")
+                testMode := os.Getenv("KRUIZE_TEST_MODE")
+
+                // Wait for metrics server readiness before testing invalid-token behavior
+                if testMode == "true" {
+                    Eventually(func() (int, error) {
+                        metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
+                        resp, err := client.Get(metricsURL)
+                        if err != nil {
+                            return 0, err
+                        }
+                        defer resp.Body.Close()
+                        return resp.StatusCode, nil
+                    }, "10s", "1s").Should(SatisfyAny(
+                        Equal(http.StatusUnauthorized),
+                        Equal(http.StatusForbidden),
+                        Equal(http.StatusInternalServerError),
+                    ), "The metrics server should be reachable before testing invalid-token behavior")
+                } else {
+                    Eventually(func() (int, error) {
+                        metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
+                        resp, err := client.Get(metricsURL)
+                        if err != nil {
+                            return 0, err
+                        }
+                        defer resp.Body.Close()
+                        return resp.StatusCode, nil
+                    }, "10s", "1s").Should(SatisfyAny(
+                        Equal(http.StatusUnauthorized),
+                        Equal(http.StatusForbidden),
+                    ), "The metrics server should be reachable before testing invalid-token behavior")
+                }
+
                 By("creating a request with an invalid bearer token")
                 metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
                 req, err := http.NewRequest("GET", metricsURL, nil)
