@@ -203,7 +203,7 @@ jobs:
         run: |
           set -euo pipefail
           
-          BRANCH_NAME="automated/v2-gh-api-kruize-versions-${{ github.run_number }}-${{ github.run_attempt }}"
+          BRANCH_NAME="automated/bump-kruize-versions-${{ github.run_number }}-${{ github.run_attempt }}"
           REPO="${{ github.repository }}"
           BASE_BRANCH="${{ github.ref_name }}"
           
