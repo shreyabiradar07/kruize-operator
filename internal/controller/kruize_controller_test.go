@@ -878,15 +878,22 @@ var _ = Describe("Kruize Controller", func() {
                     ), "The metrics server should be reachable before testing invalid-token behavior")
                 }
 
-                By("creating a request with an invalid bearer token")
+                By("executing the request with an invalid bearer token and readiness handling")
                 metricsURL := fmt.Sprintf("https://%s/metrics", utils.LocalMetricsAddr)
-                req, err := http.NewRequest("GET", metricsURL, nil)
-                Expect(err).ToNot(HaveOccurred())
-                req.Header.Set("Authorization", "Bearer invalid-token")
-
-                By("executing the request")
-                resp, err := client.Do(req)
-                Expect(err).ToNot(HaveOccurred())
+                var resp *http.Response
+                Eventually(func() error {
+                    req, err := http.NewRequest("GET", metricsURL, nil)
+                    if err != nil {
+                        return err
+                    }
+                    req.Header.Set("Authorization", "Bearer invalid-token")
+                    
+                    resp, err = client.Do(req)
+                    if err != nil {
+                        return err // Retry on connection errors
+                    }
+                    return nil
+                }, "10s", "1s").Should(Succeed(), "Should eventually connect to metrics server with invalid token")
                 defer resp.Body.Close()
 
                 By("verifying the metrics server intercepted the request")
