@@ -83,6 +83,21 @@ type ContainerResources struct {
 	MemoryLimit string `json:"memoryLimit,omitempty"`
 }
 
+// PersistentVolumeAccessMode defines the access mode for persistent volumes
+// +kubebuilder:validation:Enum=ReadWriteOnce;ReadOnlyMany;ReadWriteMany;ReadWriteOncePod
+type PersistentVolumeAccessMode string
+
+const (
+	// ReadWriteOnce allows read-write access by a single node
+	ReadWriteOnce PersistentVolumeAccessMode = "ReadWriteOnce"
+	// ReadOnlyMany allows read-only access by multiple nodes
+	ReadOnlyMany PersistentVolumeAccessMode = "ReadOnlyMany"
+	// ReadWriteMany allows read-write access by multiple nodes
+	ReadWriteMany PersistentVolumeAccessMode = "ReadWriteMany"
+	// ReadWriteOncePod allows read-write access by a single pod
+	ReadWriteOncePod PersistentVolumeAccessMode = "ReadWriteOncePod"
+)
+
 // PersistentVolumeConfig defines PV and PVC configuration
 type PersistentVolumeConfig struct {
 	// Storage size for PersistentVolume (e.g., "500Mi", "1Gi")
@@ -106,7 +121,8 @@ type PersistentVolumeConfig struct {
 	// Access modes for the persistent volume
 	// Valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
 	// +optional
-	AccessModes []string `json:"accessModes,omitempty"`
+	// +kubebuilder:validation:MaxItems=4
+	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
 }
 
 // KruizeStatus defines the observed state of Kruize

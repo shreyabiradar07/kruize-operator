@@ -97,7 +97,15 @@ spec:
                           Access modes for the persistent volume
                           Valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
                         items:
+                          description: PersistentVolumeAccessMode defines the access
+                            mode for persistent volumes
+                          enum:
+                          - ReadWriteOnce
+                          - ReadOnlyMany
+                          - ReadWriteMany
+                          - ReadWriteOncePod
                           type: string
+                        maxItems: 4
                         type: array
                       hostPath:
                         description: Host path for the persistent volume

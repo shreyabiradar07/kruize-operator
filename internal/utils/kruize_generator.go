@@ -193,17 +193,9 @@ func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
 		if len(pv.AccessModes) > 0 {
 			accessModes = []corev1.PersistentVolumeAccessMode{}
 			for _, mode := range pv.AccessModes {
-				// Validate access mode before adding
-				if g.isValidAccessMode(mode) {
-					accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
-				}
-			}
-			// If no valid access modes were provided, fall back to defaults
-			if len(accessModes) == 0 {
-				logger := log.FromContext(g.Ctx)
-				logger.Info("No valid access modes provided, falling back to defaults",
-					"defaultAccessModes", defaultAccessModes)
-				accessModes = defaultAccessModes
+				// Convert custom type to corev1.PersistentVolumeAccessMode
+				// Note: Validation is enforced by CRD schema enum, but we convert the type here
+				accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
 			}
 		}
 	}

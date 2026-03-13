@@ -903,7 +903,7 @@ var _ = Describe("Kruize Controller", func() {
 					PVCStorageSize:   "1Gi",
 					StorageClassName: "custom-storage",
 					HostPath:         "/custom/path",
-					AccessModes:      []string{"ReadWriteOnce"},
+					AccessModes:      []kruizev1alpha1.PersistentVolumeAccessMode{kruizev1alpha1.ReadWriteOnce},
 				},
 			}
 			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customResources, getTestContext())
@@ -933,7 +933,7 @@ var _ = Describe("Kruize Controller", func() {
 					PVCStorageSize:   "2Gi",
 					StorageClassName: "k8s-storage",
 					HostPath:         "/k8s/custom/path",
-					AccessModes:      []string{"ReadWriteMany"},
+					AccessModes:      []kruizev1alpha1.PersistentVolumeAccessMode{kruizev1alpha1.ReadWriteMany},
 				},
 			}
 			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customResources, getTestContext())

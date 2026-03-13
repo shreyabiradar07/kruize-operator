@@ -36,7 +36,9 @@ spec:
       pvStorageSize: "500Mi"
       # PVC storage size (if not specified, uses pvStorageSize)
       pvcStorageSize: "500Mi"
+      # Storage class name (optional, can be omitted for environments like Minikube, Kind)
       storageClassName: "manual"
       hostPath: "/mnt/data"
+      # Access modes - valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
       accessModes:
         - "ReadWriteMany"

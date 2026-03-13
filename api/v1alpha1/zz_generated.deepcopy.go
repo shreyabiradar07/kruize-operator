@@ -143,7 +143,7 @@ func (in *PersistentVolumeConfig) DeepCopyInto(out *PersistentVolumeConfig) {
 	*out = *in
 	if in.AccessModes != nil {
 		in, out := &in.AccessModes, &out.AccessModes
-		*out = make([]string, len(*in))
+		*out = make([]PersistentVolumeAccessMode, len(*in))
 		copy(*out, *in)
 	}
 }
