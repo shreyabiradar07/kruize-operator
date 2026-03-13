@@ -45,12 +45,17 @@ func getTestContext() context.Context {
 	return context.Background()
 }
 
-// findTypedResource is a helper function to find a specific resource by type, name, and label
+// findTypedResource is a helper function to find a specific resource by type, name, and optionally by label
 func findTypedResource[T client.Object](resources []client.Object, name string, labelKey string, labelValue string) T {
 	var zero T
 	for _, resource := range resources {
 		if typed, ok := resource.(T); ok {
 			if typed.GetName() == name {
+				// If no label key is provided, match by name only
+				if labelKey == "" {
+					return typed
+				}
+				// Otherwise, match by both name and label
 				if labels := typed.GetLabels(); labels != nil && labels[labelKey] == labelValue {
 					return typed
 				}
@@ -433,21 +438,8 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 			Expect(namespacedResources).NotTo(BeEmpty())
 
-			var kruizeDeployment *appsv1.Deployment
-			var dbDeployment *appsv1.Deployment
-
-			for _, obj := range namespacedResources {
-				deploy, ok := obj.(*appsv1.Deployment)
-				if !ok {
-					continue
-				}
-				switch deploy.Name {
-				case "kruize":
-					kruizeDeployment = deploy
-				case "kruize-db-deployment":
-					dbDeployment = deploy
-				}
-			}
+			kruizeDeployment := findDeployment(namespacedResources, "kruize")
+			dbDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
 
 			Expect(kruizeDeployment).NotTo(BeNil(), "expected Kruize deployment to be generated")
 			Expect(dbDeployment).NotTo(BeNil(), "expected Database deployment to be generated")
@@ -474,21 +466,8 @@ var _ = Describe("Kruize Controller", func() {
 			defaultGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, nil, getTestContext())
 			defaultNamespacedResources := defaultGenerator.NamespacedResources()
 
-			var defaultKruizeDeployment *appsv1.Deployment
-			var defaultDBDeployment *appsv1.Deployment
-
-			for _, obj := range defaultNamespacedResources {
-				deploy, ok := obj.(*appsv1.Deployment)
-				if !ok {
-					continue
-				}
-				switch deploy.Name {
-				case "kruize":
-					defaultKruizeDeployment = deploy
-				case "kruize-db-deployment":
-					defaultDBDeployment = deploy
-				}
-			}
+			defaultKruizeDeployment := findDeployment(defaultNamespacedResources, "kruize")
+			defaultDBDeployment := findDeployment(defaultNamespacedResources, "kruize-db-deployment")
 
 			Expect(defaultKruizeDeployment).NotTo(BeNil(), "default Kruize deployment should exist")
 			Expect(defaultDBDeployment).NotTo(BeNil(), "default DB deployment should exist")
@@ -513,21 +492,8 @@ var _ = Describe("Kruize Controller", func() {
 			partialGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, partialConfig, getTestContext())
 			partialNamespacedResources := partialGenerator.NamespacedResources()
 
-			var partialKruizeDeployment *appsv1.Deployment
-			var partialDBDeployment *appsv1.Deployment
-
-			for _, obj := range partialNamespacedResources {
-				deploy, ok := obj.(*appsv1.Deployment)
-				if !ok {
-					continue
-				}
-				switch deploy.Name {
-				case "kruize":
-					partialKruizeDeployment = deploy
-				case "kruize-db-deployment":
-					partialDBDeployment = deploy
-				}
-			}
+			partialKruizeDeployment := findDeployment(partialNamespacedResources, "kruize")
+			partialDBDeployment := findDeployment(partialNamespacedResources, "kruize-db-deployment")
 
 			Expect(partialKruizeDeployment).NotTo(BeNil(), "partial Kruize deployment should exist")
 			Expect(partialDBDeployment).NotTo(BeNil(), "partial DB deployment should exist")
@@ -648,41 +614,21 @@ var _ = Describe("Kruize Controller", func() {
 				namespacedResources := resourceMethod(generator)
 
 				// Check for Deployment resources and validate default resource configuration
-				var kruizeDeployment *appsv1.Deployment
-				var kruizeDBDeployment *appsv1.Deployment
-				
-				for _, resource := range namespacedResources {
-					kind := resource.GetObjectKind().GroupVersionKind().Kind
-					name := resource.GetName()
-
-					if kind == "Deployment" && name == "kruize" {
-						var ok bool
-						kruizeDeployment, ok = resource.(*appsv1.Deployment)
-						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					}
-					if kind == "Deployment" && name == "kruize-db-deployment" {
-						var ok bool
-						kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
-						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					}
-				}
+				kruizeDeployment := findDeployment(namespacedResources, "kruize")
+				kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
 
 				Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should be generated")
 				Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should be generated")
 
 				// Validate Kruize deployment has default resource configuration
-				Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-				kruizeContainer := kruizeDeployment.Spec.Template.Spec.Containers[0]
-				Expect(kruizeContainer.Name).To(Equal("kruize"))
+				kruizeContainer := getContainer(kruizeDeployment, "kruize")
 				Expect(kruizeContainer.Resources.Requests.Cpu().String()).To(Equal("700m"))
 				Expect(kruizeContainer.Resources.Requests.Memory().String()).To(Equal("768Mi"))
 				Expect(kruizeContainer.Resources.Limits.Cpu().String()).To(Equal("700m"))
 				Expect(kruizeContainer.Resources.Limits.Memory().String()).To(Equal("768Mi"))
 
 				// Validate DB deployment has default resource configuration
-				Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-				dbContainer := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
-				Expect(dbContainer.Name).To(Equal("kruize-db"))
+				dbContainer := getContainer(kruizeDBDeployment, "kruize-db")
 				Expect(dbContainer.Resources.Requests.Cpu().String()).To(Equal("500m"))
 				Expect(dbContainer.Resources.Requests.Memory().String()).To(Equal("100Mi"))
 				Expect(dbContainer.Resources.Limits.Cpu().String()).To(Equal("500m"))
@@ -716,41 +662,21 @@ var _ = Describe("Kruize Controller", func() {
 				namespacedResources := resourceMethod(generator)
 
 				// Check for Deployment resources and validate custom resource configuration
-				var kruizeDeployment *appsv1.Deployment
-				var kruizeDBDeployment *appsv1.Deployment
-				
-				for _, resource := range namespacedResources {
-					kind := resource.GetObjectKind().GroupVersionKind().Kind
-					name := resource.GetName()
-
-					if kind == "Deployment" && name == "kruize" {
-						var ok bool
-						kruizeDeployment, ok = resource.(*appsv1.Deployment)
-						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					}
-					if kind == "Deployment" && name == "kruize-db-deployment" {
-						var ok bool
-						kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
-						Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					}
-				}
+				kruizeDeployment := findDeployment(namespacedResources, "kruize")
+				kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
 
 				Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should be generated")
 				Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should be generated")
 
 				// Validate Kruize deployment has custom resource configuration
-				Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-				kruizeContainer := kruizeDeployment.Spec.Template.Spec.Containers[0]
-				Expect(kruizeContainer.Name).To(Equal("kruize"))
+				kruizeContainer := getContainer(kruizeDeployment, "kruize")
 				Expect(kruizeContainer.Resources.Requests.Cpu().String()).To(Equal("2"))
 				Expect(kruizeContainer.Resources.Requests.Memory().String()).To(Equal("1Gi"))
 				Expect(kruizeContainer.Resources.Limits.Cpu().String()).To(Equal("2500m"))
 				Expect(kruizeContainer.Resources.Limits.Memory().String()).To(Equal("1536Mi"))
 
 				// Validate DB deployment has custom resource configuration
-				Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-				dbContainer := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
-				Expect(dbContainer.Name).To(Equal("kruize-db"))
+				dbContainer := getContainer(kruizeDBDeployment, "kruize-db")
 				Expect(dbContainer.Resources.Requests.Cpu().String()).To(Equal("750m"))
 				Expect(dbContainer.Resources.Requests.Memory().String()).To(Equal("512Mi"))
 				Expect(dbContainer.Resources.Limits.Cpu().String()).To(Equal("1500m"))
@@ -773,9 +699,7 @@ var _ = Describe("Kruize Controller", func() {
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
-			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
-			Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-			Expect(kruizeDeployment.Spec.Template.Spec.Containers[0].Name).To(Equal("kruize"))
+			getContainer(kruizeDeployment, "kruize")
 		})
 
 		It("should generate Kruize-ui pod specification", func() {
@@ -784,16 +708,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize UI pod
-			var kruizeUIPod *corev1.Pod
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Pod" && resource.GetName() == "kruize-ui-nginx-pod" {
-					var ok bool
-					kruizeUIPod, ok = resource.(*corev1.Pod)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Pod")
-					break
-				}
-			}
-
+			kruizeUIPod := findTypedResource[*corev1.Pod](namespacedResources, "kruize-ui-nginx-pod", "", "")
 			Expect(kruizeUIPod).NotTo(BeNil(), "Kruize UI pod should exist")
 			Expect(kruizeUIPod.Spec.Containers).NotTo(BeEmpty())
 		})
@@ -805,9 +720,7 @@ var _ = Describe("Kruize Controller", func() {
 
 			// Find the Kruize DB deployment
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
-			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
-			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers[0].Name).To(Equal("kruize-db"))
+			getContainer(kruizeDBDeployment, "kruize-db")
 		})
 
 		It("should apply custom resource configuration to Kruize deployment", func() {
@@ -825,11 +738,7 @@ var _ = Describe("Kruize Controller", func() {
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
-			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
-			Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-			
-			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
-			Expect(container.Name).To(Equal("kruize"))
+			container := getContainer(kruizeDeployment, "kruize")
 			
 			// Verify custom resource requests
 			Expect(container.Resources.Requests.Cpu().String()).To(Equal("1"))
@@ -855,11 +764,7 @@ var _ = Describe("Kruize Controller", func() {
 
 			// Find the Kruize DB deployment
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
-			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
-			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-			
-			container := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
-			Expect(container.Name).To(Equal("kruize-db"))
+			container := getContainer(kruizeDBDeployment, "kruize-db")
 			
 			// Verify custom resource requests
 			Expect(container.Resources.Requests.Cpu().String()).To(Equal("250m"))
@@ -877,8 +782,7 @@ var _ = Describe("Kruize Controller", func() {
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
-			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
-			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
+			container := getContainer(kruizeDeployment, "kruize")
 			
 			// Verify default resource requests
 			Expect(container.Resources.Requests.Cpu().String()).To(Equal("700m"))
@@ -903,8 +807,7 @@ var _ = Describe("Kruize Controller", func() {
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
-			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
-			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
+			container := getContainer(kruizeDeployment, "kruize")
 			
 			// Verify custom CPU request
 			Expect(container.Resources.Requests.Cpu().String()).To(Equal("1500m"))
@@ -932,11 +835,7 @@ var _ = Describe("Kruize Controller", func() {
 
 			// Find the Kruize DB deployment
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
-			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
-			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-			
-			container := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
-			Expect(container.Name).To(Equal("kruize-db"))
+			container := getContainer(kruizeDBDeployment, "kruize-db")
 			
 			// Verify custom CPU request
 			Expect(container.Resources.Requests.Cpu().String()).To(Equal("300m"))
@@ -958,21 +857,8 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.KubernetesNamespacedResources()
 
 			// Find the Kruize deployment
-			var kruizeDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize" {
-					var ok bool
-					kruizeDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
-			Expect(kruizeDeployment).NotTo(BeNil(), "Kruize deployment should exist")
-			Expect(kruizeDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-			
-			container := kruizeDeployment.Spec.Template.Spec.Containers[0]
-			Expect(container.Name).To(Equal("kruize"))
+			kruizeDeployment := findDeployment(namespacedResources, "kruize")
+			container := getContainer(kruizeDeployment, "kruize")
 			
 			// Verify default values for unset fields
 			Expect(container.Resources.Requests.Cpu().String()).To(Equal("700m"))
@@ -995,21 +881,8 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.KubernetesNamespacedResources()
 
 			// Find the Kruize DB deployment
-			var kruizeDBDeployment *appsv1.Deployment
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-db-deployment" {
-					var ok bool
-					kruizeDBDeployment, ok = resource.(*appsv1.Deployment)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
-					break
-				}
-			}
-
-			Expect(kruizeDBDeployment).NotTo(BeNil(), "Kruize DB deployment should exist")
-			Expect(kruizeDBDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
-			
-			container := kruizeDBDeployment.Spec.Template.Spec.Containers[0]
-			Expect(container.Name).To(Equal("kruize-db"))
+			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
+			container := getContainer(kruizeDBDeployment, "kruize-db")
 			
 			// Verify default CPU request
 			Expect(container.Resources.Requests.Cpu().String()).To(Equal("500m"))
@@ -1235,16 +1108,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize service
-			var kruizeService *corev1.Service
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Service" && resource.GetName() == "kruize" {
-					var ok bool
-					kruizeService, ok = resource.(*corev1.Service)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Service")
-					break
-				}
-			}
-
+			kruizeService := findTypedResource[*corev1.Service](namespacedResources, "kruize", "", "")
 			Expect(kruizeService).NotTo(BeNil(), "Kruize service should exist")
 			Expect(kruizeService.Spec.Ports).NotTo(BeEmpty(), "Service should have ports defined")
 
@@ -1265,16 +1129,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize UI service
-			var kruizeUIService *corev1.Service
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Service" && resource.GetName() == "kruize-ui-nginx-service" {
-					var ok bool
-					kruizeUIService, ok = resource.(*corev1.Service)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Service")
-					break
-				}
-			}
-
+			kruizeUIService := findTypedResource[*corev1.Service](namespacedResources, "kruize-ui-nginx-service", "", "")
 			Expect(kruizeUIService).NotTo(BeNil(), "Kruize UI service should exist")
 			Expect(kruizeUIService.Spec.Ports).NotTo(BeEmpty(), "Service should have ports defined")
 
@@ -1295,16 +1150,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize DB service
-			var kruizeDBService *corev1.Service
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Service" && resource.GetName() == "kruize-db-service" {
-					var ok bool
-					kruizeDBService, ok = resource.(*corev1.Service)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Service")
-					break
-				}
-			}
-
+			kruizeDBService := findTypedResource[*corev1.Service](namespacedResources, "kruize-db-service", "", "")
 			Expect(kruizeDBService).NotTo(BeNil(), "Kruize DB service should exist")
 			Expect(kruizeDBService.Spec.Ports).NotTo(BeEmpty(), "Service should have ports defined")
 
@@ -1325,16 +1171,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize service
-			var kruizeService *corev1.Service
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Service" && resource.GetName() == "kruize" {
-					var ok bool
-					kruizeService, ok = resource.(*corev1.Service)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Service")
-					break
-				}
-			}
-
+			kruizeService := findTypedResource[*corev1.Service](namespacedResources, "kruize", "", "")
 			Expect(kruizeService).NotTo(BeNil(), "Kruize service should exist")
 			Expect(kruizeService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort), "Kruize service should be NodePort type")
 		})
@@ -1345,16 +1182,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize UI service
-			var kruizeUIService *corev1.Service
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Service" && resource.GetName() == "kruize-ui-nginx-service" {
-					var ok bool
-					kruizeUIService, ok = resource.(*corev1.Service)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Service")
-					break
-				}
-			}
-
+			kruizeUIService := findTypedResource[*corev1.Service](namespacedResources, "kruize-ui-nginx-service", "", "")
 			Expect(kruizeUIService).NotTo(BeNil(), "Kruize UI service should exist")
 			Expect(kruizeUIService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort), "Kruize UI service should be NodePort type")
 		})
@@ -1365,16 +1193,7 @@ var _ = Describe("Kruize Controller", func() {
 			namespacedResources := generator.NamespacedResources()
 
 			// Find the Kruize DB service
-			var kruizeDBService *corev1.Service
-			for _, resource := range namespacedResources {
-				if resource.GetObjectKind().GroupVersionKind().Kind == "Service" && resource.GetName() == "kruize-db-service" {
-					var ok bool
-					kruizeDBService, ok = resource.(*corev1.Service)
-					Expect(ok).To(BeTrue(), "Resource should be a valid Service")
-					break
-				}
-			}
-
+			kruizeDBService := findTypedResource[*corev1.Service](namespacedResources, "kruize-db-service", "", "")
 			Expect(kruizeDBService).NotTo(BeNil(), "Kruize DB service should exist")
 			Expect(kruizeDBService.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP), "Kruize DB service should be ClusterIP type")
 		})
