@@ -144,29 +144,6 @@ func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequiremen
 	}
 }
 
-// isValidAccessMode validates if the given access mode is a valid Kubernetes PersistentVolume access mode
-func (g *KruizeResourceGenerator) isValidAccessMode(mode string) bool {
-	validModes := map[string]bool{
-		string(corev1.ReadWriteOnce):    true,
-		string(corev1.ReadOnlyMany):     true,
-		string(corev1.ReadWriteMany):    true,
-		string(corev1.ReadWriteOncePod): true,
-	}
-	isValid := validModes[mode]
-	if !isValid {
-		logger := log.FromContext(g.Ctx)
-		logger.Info("Invalid access mode specified, will be ignored",
-			"provided", mode,
-			"validModes", []string{
-				string(corev1.ReadWriteOnce),
-				string(corev1.ReadOnlyMany),
-				string(corev1.ReadWriteMany),
-				string(corev1.ReadWriteOncePod),
-			})
-	}
-	return isValid
-}
-
 // ensurePVAndPVCStorageConsistency validates and logs if PVC storage size is greater than PV storage size.
 func ensurePVAndPVCStorageConsistency(pvStorageSize, pvcStorageSize string, ctx context.Context) (string, string, error) {
 	logger := log.FromContext(ctx)
