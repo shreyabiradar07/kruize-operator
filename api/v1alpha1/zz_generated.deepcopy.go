@@ -164,12 +164,12 @@ func (in *ResourceConfig) DeepCopyInto(out *ResourceConfig) {
 	if in.Database != nil {
 		in, out := &in.Database, &out.Database
 		*out = new(ContainerResources)
-		**out = **in
+		(*in).DeepCopyInto(*out)
 	}
 	if in.Kruize != nil {
 		in, out := &in.Kruize, &out.Kruize
 		*out = new(ContainerResources)
-		**out = **in
+		(*in).DeepCopyInto(*out)
 	}
 	if in.PersistentVolume != nil {
 		in, out := &in.PersistentVolume, &out.PersistentVolume

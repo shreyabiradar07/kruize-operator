@@ -167,6 +167,30 @@ func (g *KruizeResourceGenerator) isValidAccessMode(mode string) bool {
 	return isValid
 }
 
+// ensurePVAndPVCStorageConsistency validates and logs if PVC storage size is greater than PV storage size.
+func ensurePVAndPVCStorageConsistency(pvStorageSize, pvcStorageSize string, ctx context.Context) (string, string, error) {
+	logger := log.FromContext(ctx)
+	
+	pvQty, err := resource.ParseQuantity(pvStorageSize)
+	if err != nil {
+		return pvStorageSize, pvcStorageSize, fmt.Errorf("failed to parse PV storage size %q: %w", pvStorageSize, err)
+	}
+
+	pvcQty, err := resource.ParseQuantity(pvcStorageSize)
+	if err != nil {
+		return pvStorageSize, pvcStorageSize, fmt.Errorf("failed to parse PVC storage size %q: %w", pvcStorageSize, err)
+	}
+
+	// If PVC > PV, surface the potential bind-time failure.
+	if pvcQty.Cmp(pvQty) == 1 {
+		logger.Info("PVC storage request is greater than PV storage; PVC may fail to bind",
+			"pvcStorageSize", pvcStorageSize,
+			"pvStorageSize", pvStorageSize)
+	}
+
+	return pvStorageSize, pvcStorageSize, nil
+}
+
 // getPVConfigWithDefaults is a shared helper that returns PV configuration with injected defaults
 func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
 	defaultPVStorageSize, defaultStorageClassName, defaultHostPath string,
@@ -198,6 +222,16 @@ func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
 				accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
 			}
 		}
+	}
+
+	// Validate PV/PVC storage consistency and log warnings if misconfigured
+	pvStorageSize, pvcStorageSize, err := ensurePVAndPVCStorageConsistency(pvStorageSize, pvcStorageSize, g.Ctx)
+	if err != nil {
+		logger := log.FromContext(g.Ctx)
+		logger.Info("Failed to validate PV/PVC storage consistency; continuing with provided values",
+			"error", err.Error(),
+			"pvStorageSize", pvStorageSize,
+			"pvcStorageSize", pvcStorageSize)
 	}
 
 	return pvStorageSize, pvcStorageSize, storageClassName, hostPath, accessModes
