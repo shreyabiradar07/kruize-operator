@@ -30,10 +30,10 @@ const (
 // Default container image versions
 const (
 	// defaultAutotuneImageTag is the default tag for Kruize Autotune image
-	defaultAutotuneImageTag = "0.8.1"
+	defaultAutotuneImageTag = "0.9"
 	
 	// defaultUIImageTag is the default tag for Kruize UI image
-	defaultUIImageTag = "0.0.9"
+	defaultUIImageTag = "0.1.0"
 	
 	// defaultAutotuneImageRepo is the default repository for Kruize Autotune image
 	defaultAutotuneImageRepo = "quay.io/kruize/autotune_operator"
