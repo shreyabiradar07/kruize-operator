@@ -35,12 +35,12 @@ type KruizeResourceGenerator struct {
 	Autotune_image    string
 	Autotune_ui_image string
 	ClusterType       string // "openshift", "minikube", or "kind"
-	ResourceConfig    *kruizev1alpha1.ResourceConfig
+	KruizeSpec        *kruizev1alpha1.KruizeSpec
 	Ctx               context.Context
 }
 
 // NewKruizeResourceGenerator creates a new generator for Kruize resources.
-func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string, resourceConfig *kruizev1alpha1.ResourceConfig, ctx context.Context) *KruizeResourceGenerator {
+func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string, kruizeSpec *kruizev1alpha1.KruizeSpec, ctx context.Context) *KruizeResourceGenerator {
 	// If no image is provided from the CR, use a sensible default.
 	// The default can be configured via environment variables:
 	// - DEFAULT_AUTOTUNE_IMAGE: Override the default Autotune image
@@ -59,7 +59,7 @@ func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotune
 		Autotune_image:    autotuneImage,
 		Autotune_ui_image: autotuneUIImage,
 		ClusterType:       clusterType,
-		ResourceConfig:    resourceConfig,
+		KruizeSpec:        kruizeSpec,
 		Ctx:               ctx,
 	}
 }
@@ -99,11 +99,16 @@ func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
 	memoryRequest := constants.DefaultDBMemoryRequest
 	memoryLimit := constants.DefaultDBMemoryLimit
 
-	if g.ResourceConfig != nil && g.ResourceConfig.Database != nil {
-		cpuRequest = g.getResourceValue(g.ResourceConfig.Database.CPURequest, cpuRequest)
-		cpuLimit = g.getResourceValue(g.ResourceConfig.Database.CPULimit, cpuLimit)
-		memoryRequest = g.getResourceValue(g.ResourceConfig.Database.MemoryRequest, memoryRequest)
-		memoryLimit = g.getResourceValue(g.ResourceConfig.Database.MemoryLimit, memoryLimit)
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && g.KruizeSpec.KruizeDB.Resources != nil {
+		res := g.KruizeSpec.KruizeDB.Resources
+		if res.Requests != nil {
+			cpuRequest = g.getResourceValue(res.Requests.CPU, cpuRequest)
+			memoryRequest = g.getResourceValue(res.Requests.Memory, memoryRequest)
+		}
+		if res.Limits != nil {
+			cpuLimit = g.getResourceValue(res.Limits.CPU, cpuLimit)
+			memoryLimit = g.getResourceValue(res.Limits.Memory, memoryLimit)
+		}
 	}
 
 	return corev1.ResourceRequirements{
@@ -125,11 +130,16 @@ func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequiremen
 	memoryRequest := constants.DefaultKruizeMemoryRequest
 	memoryLimit := constants.DefaultKruizeMemoryLimit
 
-	if g.ResourceConfig != nil && g.ResourceConfig.Kruize != nil {
-		cpuRequest = g.getResourceValue(g.ResourceConfig.Kruize.CPURequest, cpuRequest)
-		cpuLimit = g.getResourceValue(g.ResourceConfig.Kruize.CPULimit, cpuLimit)
-		memoryRequest = g.getResourceValue(g.ResourceConfig.Kruize.MemoryRequest, memoryRequest)
-		memoryLimit = g.getResourceValue(g.ResourceConfig.Kruize.MemoryLimit, memoryLimit)
+	if g.KruizeSpec != nil && g.KruizeSpec.Kruize != nil && g.KruizeSpec.Kruize.Resources != nil {
+		res := g.KruizeSpec.Kruize.Resources
+		if res.Requests != nil {
+			cpuRequest = g.getResourceValue(res.Requests.CPU, cpuRequest)
+			memoryRequest = g.getResourceValue(res.Requests.Memory, memoryRequest)
+		}
+		if res.Limits != nil {
+			cpuLimit = g.getResourceValue(res.Limits.CPU, cpuLimit)
+			memoryLimit = g.getResourceValue(res.Limits.Memory, memoryLimit)
+		}
 	}
 
 	return corev1.ResourceRequirements{
@@ -142,6 +152,114 @@ func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequiremen
 			corev1.ResourceCPU:    g.parseResourceQuantity(cpuLimit, constants.DefaultKruizeCPULimit),
 		},
 	}
+}
+
+// getDBVolumeMounts returns volume mounts for kruize-db with defaults
+func (g *KruizeResourceGenerator) getDBVolumeMounts() []corev1.VolumeMount {
+	defaultVolumeMounts := []corev1.VolumeMount{
+		{Name: "kruize-db-storage", MountPath: "/var/lib/pgsql/data"},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.VolumeMounts) > 0 {
+		volumeMounts := []corev1.VolumeMount{}
+		for _, vm := range g.KruizeSpec.KruizeDB.VolumeMounts {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      vm.Name,
+				MountPath: vm.MountPath,
+			})
+		}
+		return volumeMounts
+	}
+
+	return defaultVolumeMounts
+}
+
+// getDBVolumes returns volumes for kruize-db pod with defaults
+func (g *KruizeResourceGenerator) getDBVolumes() []corev1.Volume {
+	defaultVolumes := []corev1.Volume{
+		{
+			Name: "kruize-db-storage",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "kruize-db-pv-claim",
+				},
+			},
+		},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.Volumes) > 0 {
+		volumes := []corev1.Volume{}
+		for _, v := range g.KruizeSpec.KruizeDB.Volumes {
+			volume := corev1.Volume{
+				Name: v.Name,
+			}
+			if v.PersistentVolumeClaim != nil {
+				volume.VolumeSource = corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: v.PersistentVolumeClaim.ClaimName,
+					},
+				}
+			}
+			volumes = append(volumes, volume)
+		}
+		return volumes
+	}
+
+	return defaultVolumes
+}
+
+// getDBVolumeMountsKubernetes returns volume mounts for kruize-db with Kubernetes defaults
+func (g *KruizeResourceGenerator) getDBVolumeMountsKubernetes() []corev1.VolumeMount {
+	defaultVolumeMounts := []corev1.VolumeMount{
+		{Name: "kruize-db-storage", MountPath: "/var/lib/postgresql/data"},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.VolumeMounts) > 0 {
+		volumeMounts := []corev1.VolumeMount{}
+		for _, vm := range g.KruizeSpec.KruizeDB.VolumeMounts {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      vm.Name,
+				MountPath: vm.MountPath,
+			})
+		}
+		return volumeMounts
+	}
+
+	return defaultVolumeMounts
+}
+
+// getDBVolumesKubernetes returns volumes for kruize-db pod with Kubernetes defaults
+func (g *KruizeResourceGenerator) getDBVolumesKubernetes() []corev1.Volume {
+	defaultVolumes := []corev1.Volume{
+		{
+			Name: "kruize-db-storage",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: "kruize-db-pvc",
+				},
+			},
+		},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.Volumes) > 0 {
+		volumes := []corev1.Volume{}
+		for _, v := range g.KruizeSpec.KruizeDB.Volumes {
+			volume := corev1.Volume{
+				Name: v.Name,
+			}
+			if v.PersistentVolumeClaim != nil {
+				volume.VolumeSource = corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: v.PersistentVolumeClaim.ClaimName,
+					},
+				}
+			}
+			volumes = append(volumes, volume)
+		}
+		return volumes
+	}
+
+	return defaultVolumes
 }
 
 // ensurePVAndPVCStorageConsistency validates and logs if PVC storage size is greater than PV storage size.
@@ -179,25 +297,35 @@ func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
 	hostPath = defaultHostPath
 	accessModes = defaultAccessModes
 
-	if g.ResourceConfig != nil && g.ResourceConfig.PersistentVolume != nil {
-		pv := g.ResourceConfig.PersistentVolume
-		pvStorageSize = g.getResourceValue(pv.PVStorageSize, pvStorageSize)
-		// If PVCStorageSize is not set, use PVStorageSize
-		if pv.PVCStorageSize != "" {
-			pvcStorageSize = pv.PVCStorageSize
+	if g.KruizeSpec != nil {
+		// Get PV configuration
+		if g.KruizeSpec.PersistentVolume != nil {
+			pv := g.KruizeSpec.PersistentVolume
+			if pv.Capacity != nil && pv.Capacity.Storage != "" {
+				pvStorageSize = pv.Capacity.Storage
+			}
+			storageClassName = g.getResourceValue(pv.StorageClassName, storageClassName)
+			if pv.HostPath != nil && pv.HostPath.Path != "" {
+				hostPath = pv.HostPath.Path
+			}
+			if len(pv.AccessModes) > 0 {
+				accessModes = []corev1.PersistentVolumeAccessMode{}
+				for _, mode := range pv.AccessModes {
+					accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
+				}
+			}
+		}
+
+		// Get PVC configuration
+		if g.KruizeSpec.PersistentVolumeClaim != nil {
+			pvc := g.KruizeSpec.PersistentVolumeClaim
+			if pvc.Resources != nil && pvc.Resources.Requests != nil && pvc.Resources.Requests.Storage != "" {
+				pvcStorageSize = pvc.Resources.Requests.Storage
+			} else {
+				pvcStorageSize = pvStorageSize
+			}
 		} else {
 			pvcStorageSize = pvStorageSize
-		}
-		storageClassName = g.getResourceValue(pv.StorageClassName, storageClassName)
-		hostPath = g.getResourceValue(pv.HostPath, hostPath)
-
-		if len(pv.AccessModes) > 0 {
-			accessModes = []corev1.PersistentVolumeAccessMode{}
-			for _, mode := range pv.AccessModes {
-				// Convert custom type to corev1.PersistentVolumeAccessMode
-				// Note: Validation is enforced by CRD schema enum, but we convert the type here
-				accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
-			}
 		}
 	}
 
@@ -648,21 +776,10 @@ func (g *KruizeResourceGenerator) kruizeDBDeployment() *appsv1.Deployment {
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: 5432},
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: "kruize-db-storage", MountPath: "/var/lib/pgsql/data"},
-							},
+							VolumeMounts: g.getDBVolumeMounts(),
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "kruize-db-storage",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "kruize-db-pv-claim",
-								},
-							},
-						},
-					},
+					Volumes: g.getDBVolumes(),
 				},
 			},
 		},
@@ -1191,21 +1308,10 @@ func (g *KruizeResourceGenerator) kruizeDBDeploymentKubernetes() *appsv1.Deploym
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: 5432},
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: "kruize-db-storage", MountPath: "/var/lib/postgresql/data"},
-							},
+							VolumeMounts: g.getDBVolumeMountsKubernetes(),
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "kruize-db-storage",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "kruize-db-pvc",
-								},
-							},
-						},
-					},
+					Volumes: g.getDBVolumesKubernetes(),
 				},
 			},
 		},
