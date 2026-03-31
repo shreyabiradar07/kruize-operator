@@ -176,12 +176,14 @@ func (g *KruizeResourceGenerator) getDBVolumeMounts() []corev1.VolumeMount {
 
 // getDBVolumes returns volumes for kruize-db pod with defaults
 func (g *KruizeResourceGenerator) getDBVolumes() []corev1.Volume {
+	pvcName := g.getPVCName("kruize-db-pv-claim")
+
 	defaultVolumes := []corev1.Volume{
 		{
 			Name: "kruize-db-storage",
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: "kruize-db-pv-claim",
+					ClaimName: pvcName,
 				},
 			},
 		},
@@ -230,12 +232,14 @@ func (g *KruizeResourceGenerator) getDBVolumeMountsKubernetes() []corev1.VolumeM
 
 // getDBVolumesKubernetes returns volumes for kruize-db pod with Kubernetes defaults
 func (g *KruizeResourceGenerator) getDBVolumesKubernetes() []corev1.Volume {
+	pvcName := g.getPVCName("kruize-db-pvc")
+
 	defaultVolumes := []corev1.Volume{
 		{
 			Name: "kruize-db-storage",
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: "kruize-db-pvc",
+					ClaimName: pvcName,
 				},
 			},
 		},
@@ -342,6 +346,38 @@ func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
 	return pvStorageSize, pvcStorageSize, storageClassName, hostPath, accessModes
 }
 
+// getPVName returns the PV name from spec or default
+func (g *KruizeResourceGenerator) getPVName(defaultName string) string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolume != nil && g.KruizeSpec.PersistentVolume.Name != "" {
+		return g.KruizeSpec.PersistentVolume.Name
+	}
+	return defaultName
+}
+
+// getPVCName returns the PVC name from spec or default
+func (g *KruizeResourceGenerator) getPVCName(defaultName string) string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolumeClaim != nil && g.KruizeSpec.PersistentVolumeClaim.Name != "" {
+		return g.KruizeSpec.PersistentVolumeClaim.Name
+	}
+	return defaultName
+}
+
+// getPVLabels returns the PV labels from spec or default
+func (g *KruizeResourceGenerator) getPVLabels(defaultLabels map[string]string) map[string]string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolume != nil && len(g.KruizeSpec.PersistentVolume.Labels) > 0 {
+		return g.KruizeSpec.PersistentVolume.Labels
+	}
+	return defaultLabels
+}
+
+// getPVCLabels returns the PVC labels from spec or default
+func (g *KruizeResourceGenerator) getPVCLabels(defaultLabels map[string]string) map[string]string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolumeClaim != nil && len(g.KruizeSpec.PersistentVolumeClaim.Labels) > 0 {
+		return g.KruizeSpec.PersistentVolumeClaim.Labels
+	}
+	return defaultLabels
+}
+
 // getPVConfig returns PV configuration with defaults for OpenShift
 func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
 	return g.getPVConfigWithDefaults(
@@ -376,7 +412,6 @@ func (g *KruizeResourceGenerator) ClusterScopedResources() []client.Object {
 		g.AutotuneClusterRoleBinding(),
 		g.ManualStorageClass(),
 		g.kruizeDBPersistentVolume(),
-		g.kruizeDBPersistentVolumeClaim(),
 	}
 }
 
@@ -384,6 +419,7 @@ func (g *KruizeResourceGenerator) ClusterScopedResources() []client.Object {
 // These resources will get an owner reference set to the Kruize CR.
 func (g *KruizeResourceGenerator) NamespacedResources() []client.Object {
 	objects := []client.Object{
+		g.kruizeDBPersistentVolumeClaim(),
 		g.kruizeDBDeployment(),
 		g.kruizeDBService(),
 		g.kruizeDeployment(),
@@ -574,6 +610,11 @@ func (g *KruizeResourceGenerator) ManualStorageClass() *storagev1.StorageClass {
 // Note: PersistentVolumes are cluster-scoped resources.
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentVolume {
 	pvStorageSize, _, storageClassName, hostPath, accessModes := g.getPVConfig()
+	pvName := g.getPVName("kruize-db-pv-volume")
+	labels := g.getPVLabels(map[string]string{
+		"type": "local",
+		"app":  "kruize-db",
+	})
 
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
@@ -581,11 +622,8 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentV
 			Kind:       "PersistentVolume",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kruize-db-pv-volume",
-			Labels: map[string]string{
-				"type": "local",
-				"app":  "kruize-db",
-			},
+			Name:   pvName,
+			Labels: labels,
 		},
 		Spec: corev1.PersistentVolumeSpec{
 			StorageClassName: storageClassName,
@@ -606,6 +644,8 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentV
 // kruizeDBPersistentVolumeClaim generates the PersistentVolumeClaim for the Kruize database.
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
 	_, pvcStorageSize, storageClassName, _, accessModes := g.getPVConfig()
+	pvcName := g.getPVCName("kruize-db-pv-claim")
+	labels := g.getPVCLabels(map[string]string{"app": "kruize-db"})
 
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
@@ -613,11 +653,9 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaim() *corev1.Persis
 			Kind:       "PersistentVolumeClaim",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-db-pv-claim",
+			Name:      pvcName,
 			Namespace: g.Namespace,
-			Labels: map[string]string{
-				"app": "kruize-db",
-			},
+			Labels:    labels,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			StorageClassName: &storageClassName,
@@ -1211,6 +1249,8 @@ func (g *KruizeResourceGenerator) instaslicesAccessClusterRoleBindingKubernetes(
 // kruizeDBPersistentVolumeKubernetes generates PV for Kind/Minikube/Kubernetes (different from OpenShift)
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.PersistentVolume {
 	pvStorageSize, _, storageClassName, hostPath, accessModes := g.getPVConfigKubernetes()
+	pvName := g.getPVName("kruize-db-pv")
+	labels := g.getPVLabels(map[string]string{"app": "kruize-db"})
 
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
@@ -1218,11 +1258,9 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 			Kind:       "PersistentVolume",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-db-pv",
+			Name:      pvName,
 			Namespace: g.Namespace,
-			Labels: map[string]string{
-				"app": "kruize-db",
-			},
+			Labels:    labels,
 		},
 		Spec: corev1.PersistentVolumeSpec{
 			StorageClassName: storageClassName,
@@ -1243,6 +1281,8 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 // kruizeDBPersistentVolumeClaimKubernetes generates PVC for Kind/Minikube/Kubernetes
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *corev1.PersistentVolumeClaim {
 	_, pvcStorageSize, storageClassName, _, accessModes := g.getPVConfigKubernetes()
+	pvcName := g.getPVCName("kruize-db-pvc")
+	labels := g.getPVCLabels(map[string]string{"app": "kruize-db"})
 
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
@@ -1250,8 +1290,9 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *cor
 			Kind:       "PersistentVolumeClaim",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-db-pvc",
+			Name:      pvcName,
 			Namespace: g.Namespace,
+			Labels:    labels,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			StorageClassName: &storageClassName,
@@ -1738,13 +1779,13 @@ func (g *KruizeResourceGenerator) KubernetesClusterScopedResources() []client.Ob
 		g.instaslicesAccessClusterRoleBindingKubernetes(),
 		g.kruizeEditKOClusterRoleBindingKubernetes(),
 		g.kruizeDBPersistentVolumeKubernetes(),
-		g.kruizeDBPersistentVolumeClaimKubernetes(),
 	}
 }
 
 // KubernetesNamespacedResources returns namespaced resources for Kind/minikube/Kubernetes
 func (g *KruizeResourceGenerator) KubernetesNamespacedResources() []client.Object {
 	return []client.Object{
+		g.kruizeDBPersistentVolumeClaimKubernetes(),
 		g.kruizeToPrometheusNetworkPolicy(),
 		g.kruizeDBDeploymentKubernetes(),
 		g.kruizeDBService(),
