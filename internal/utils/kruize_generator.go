@@ -697,9 +697,6 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 		// The Spec defines the desired state of the Deployment.
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
-			Strategy: appsv1.DeploymentStrategy{
-				Type: appsv1.RecreateDeploymentStrategyType,
-			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app": "kruize-ui-nginx",
