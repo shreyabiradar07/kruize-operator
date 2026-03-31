@@ -15,30 +15,59 @@ spec:
   
   # Optional: Resource configuration for Kruize components
   # If not specified, default values will be used
-  resources:
-    # Database resource configuration
-    database:
-      cpuRequest: "0.5"
-      cpuLimit: "0.5"
-      memoryRequest: "100Mi"
-      memoryLimit: "100Mi"
+  # Persistent Volume configuration
+  persistentVolume:
+    name: "kruize-db-pv-volume"
+    storageClassName: "manual"
+    capacity:
+      storage: "500Mi"
+    accessModes:
+      - "ReadWriteMany"
+    hostPath:
+      path: "/mnt/data"
+    labels:
+      type: "local"
+      app: "kruize-db"
+  
+  # Persistent Volume Claim configuration
+  persistentVolumeClaim:
+    name: "kruize-db-pv-claim"
+    storageClassName: "manual"
+    accessModes:
+      - "ReadWriteMany"
+    resources:
+      requests:
+        storage: "500Mi"
+    labels:
+      app: "kruize-db"
+  
+  # Database resource configuration
+  kruize-db:
+    resources:
+      requests:
+        memory: "100Mi"
+        cpu: "0.5"
+      limits:
+        memory: "100Mi"
+        cpu: "0.5"
     
-    # Kruize application resource configuration
-    kruize:
-      cpuRequest: "0.7"
-      cpuLimit: "0.7"
-      memoryRequest: "768Mi"
-      memoryLimit: "768Mi"
-
-    # Persistent Volume configuration
-    persistentVolume:
-      # PV storage size (should be >= PVC storage size)
-      pvStorageSize: "500Mi"
-      # PVC storage size (if not specified, uses pvStorageSize)
-      pvcStorageSize: "500Mi"
-      # Storage class name (optional, can be omitted for environments like Minikube, Kind)
-      storageClassName: "manual"
-      hostPath: "/mnt/data"
-      # Access modes - valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
-      accessModes:
-        - "ReadWriteMany"
+    # Volume mount configuration (container-level)
+    volumeMounts:
+      - name: "kruize-db-storage"
+        mountPath: "/var/lib/pgsql/data"
+    
+    # Volume configuration (pod-level)
+    volumes:
+      - name: "kruize-db-storage"
+        persistentVolumeClaim:
+          claimName: "kruize-db-pv-claim"
+  
+  # Kruize application resource configuration
+  kruize:
+    resources:
+      requests:
+        memory: "768Mi"
+        cpu: "0.7"
+      limits:
+        memory: "768Mi"
+        cpu: "0.7"

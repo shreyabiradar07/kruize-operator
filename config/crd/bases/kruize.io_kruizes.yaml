@@ -51,79 +51,189 @@ spec:
               cluster_type:
                 description: Type of Kubernetes cluster (openshift, minikube, or kind)
                 type: string
+              kruize:
+                description: Kruize application resource configuration
+                properties:
+                  resources:
+                    description: Resource requirements
+                    properties:
+                      limits:
+                        description: Resource limits
+                        properties:
+                          cpu:
+                            description: CPU (e.g., "0.5", "500m")
+                            type: string
+                          memory:
+                            description: Memory (e.g., "100Mi", "1Gi")
+                            type: string
+                        type: object
+                      requests:
+                        description: Resource requests
+                        properties:
+                          cpu:
+                            description: CPU (e.g., "0.5", "500m")
+                            type: string
+                          memory:
+                            description: Memory (e.g., "100Mi", "1Gi")
+                            type: string
+                        type: object
+                    type: object
+                type: object
+              kruize-db:
+                description: Database resource configuration
+                properties:
+                  resources:
+                    description: Resource requirements
+                    properties:
+                      limits:
+                        description: Resource limits
+                        properties:
+                          cpu:
+                            description: CPU (e.g., "0.5", "500m")
+                            type: string
+                          memory:
+                            description: Memory (e.g., "100Mi", "1Gi")
+                            type: string
+                        type: object
+                      requests:
+                        description: Resource requests
+                        properties:
+                          cpu:
+                            description: CPU (e.g., "0.5", "500m")
+                            type: string
+                          memory:
+                            description: Memory (e.g., "100Mi", "1Gi")
+                            type: string
+                        type: object
+                    type: object
+                  volumeMounts:
+                    description: Volume mounts for the container
+                    items:
+                      description: VolumeMount describes a mounting of a Volume within
+                        a container
+                      properties:
+                        mountPath:
+                          description: Path within the container at which the volume
+                            should be mounted
+                          type: string
+                        name:
+                          description: Name of the volume to mount
+                          type: string
+                      required:
+                      - mountPath
+                      - name
+                      type: object
+                    type: array
+                  volumes:
+                    description: Volumes for the pod
+                    items:
+                      description: Volume represents a named volume in a pod
+                      properties:
+                        name:
+                          description: Name of the volume
+                          type: string
+                        persistentVolumeClaim:
+                          description: PersistentVolumeClaim represents a reference
+                            to a PersistentVolumeClaim
+                          properties:
+                            claimName:
+                              description: ClaimName is the name of the PVC in the
+                                same namespace
+                              type: string
+                          required:
+                          - claimName
+                          type: object
+                      required:
+                      - name
+                      type: object
+                    type: array
+                type: object
               namespace:
                 description: Target namespace for Kruize deployment
                 type: string
-              resources:
-                description: Resource configuration for Kruize components
+              persistentVolume:
+                description: Persistent Volume configuration
                 properties:
-                  database:
-                    description: Database resource configuration
+                  accessModes:
+                    description: Access modes for the persistent volume
+                    items:
+                      description: PersistentVolumeAccessMode defines the access mode
+                        for persistent volumes
+                      enum:
+                      - ReadWriteOnce
+                      - ReadOnlyMany
+                      - ReadWriteMany
+                      - ReadWriteOncePod
+                      type: string
+                    maxItems: 4
+                    type: array
+                  capacity:
+                    description: Capacity defines the storage capacity
                     properties:
-                      cpuLimit:
-                        description: CPU limit (e.g., "0.5", "500m")
-                        type: string
-                      cpuRequest:
-                        description: CPU request (e.g., "0.5", "500m")
-                        type: string
-                      memoryLimit:
-                        description: Memory limit (e.g., "100Mi", "1Gi")
-                        type: string
-                      memoryRequest:
-                        description: Memory request (e.g., "100Mi", "1Gi")
+                      storage:
+                        description: Storage size (e.g., "500Mi", "1Gi")
                         type: string
                     type: object
-                  kruize:
-                    description: Kruize application resource configuration
+                  hostPath:
+                    description: Host path configuration
                     properties:
-                      cpuLimit:
-                        description: CPU limit (e.g., "0.5", "500m")
+                      path:
+                        description: Path of the directory on the host
                         type: string
-                      cpuRequest:
-                        description: CPU request (e.g., "0.5", "500m")
-                        type: string
-                      memoryLimit:
-                        description: Memory limit (e.g., "100Mi", "1Gi")
-                        type: string
-                      memoryRequest:
-                        description: Memory request (e.g., "100Mi", "1Gi")
-                        type: string
+                    required:
+                    - path
                     type: object
-                  persistentVolume:
-                    description: Persistent Volume configuration
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: Labels for the PersistentVolume
+                    type: object
+                  name:
+                    description: Name of the PersistentVolume
+                    type: string
+                  storageClassName:
+                    description: Storage class name
+                    type: string
+                type: object
+              persistentVolumeClaim:
+                description: Persistent Volume Claim configuration
+                properties:
+                  accessModes:
+                    description: Access modes for the persistent volume claim
+                    items:
+                      description: PersistentVolumeAccessMode defines the access mode
+                        for persistent volumes
+                      enum:
+                      - ReadWriteOnce
+                      - ReadOnlyMany
+                      - ReadWriteMany
+                      - ReadWriteOncePod
+                      type: string
+                    maxItems: 4
+                    type: array
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: Labels for the PersistentVolumeClaim
+                    type: object
+                  name:
+                    description: Name of the PersistentVolumeClaim
+                    type: string
+                  resources:
+                    description: Resources defines the storage resources
                     properties:
-                      accessModes:
-                        description: |-
-                          Access modes for the persistent volume
-                          Valid values: ReadWriteOnce, ReadOnlyMany, ReadWriteMany, ReadWriteOncePod
-                        items:
-                          description: PersistentVolumeAccessMode defines the access
-                            mode for persistent volumes
-                          enum:
-                          - ReadWriteOnce
-                          - ReadOnlyMany
-                          - ReadWriteMany
-                          - ReadWriteOncePod
-                          type: string
-                        maxItems: 4
-                        type: array
-                      hostPath:
-                        description: Host path for the persistent volume
-                        type: string
-                      pvStorageSize:
-                        description: |-
-                          Storage size for PersistentVolume (e.g., "500Mi", "1Gi")
-                          If not specified, defaults to 500Mi for OpenShift, 1Gi for Kubernetes
-                        type: string
-                      pvcStorageSize:
-                        description: |-
-                          Storage size for PersistentVolumeClaim (e.g., "500Mi", "1Gi")
-                          If not specified, uses PVStorageSize value
-                        type: string
-                      storageClassName:
-                        description: Storage class name
-                        type: string
+                      requests:
+                        description: Requests describes the minimum storage resources
+                          required
+                        properties:
+                          storage:
+                            description: Storage size (e.g., "500Mi", "1Gi")
+                            type: string
+                        type: object
                     type: object
+                  storageClassName:
+                    description: Storage class name
+                    type: string
                 type: object
             required:
             - autotune_image
