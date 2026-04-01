@@ -727,12 +727,6 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 									MountPath: "/etc/nginx/nginx.conf",
 									SubPath:   "nginx.conf",
 								},
-								{
-									Name:      "nginx-cache",
-									MountPath: "/var/cache/nginx",
-								},
-								{Name: "nginx-pid", MountPath: "/var/run"},
-								{Name: "nginx-tmp", MountPath: "/tmp"},
 							},
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: boolPtr(false),
@@ -753,14 +747,6 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 								},
 							},
 						},
-						{
-							Name: "nginx-cache",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
-							},
-						},
-						{Name: "nginx-pid", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-						{Name: "nginx-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 					},
 				},
 			},
@@ -772,27 +758,34 @@ func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 func (g *KruizeResourceGenerator) nginxConfigMap() *corev1.ConfigMap {
 	nginxConf := `
 events {}
+pid /tmp/nginx.pid;
 http {
-  upstream kruize-api {
-	server kruize:8080;
-  }
+	 client_body_temp_path /tmp/client_temp;
+	 proxy_temp_path /tmp/proxy_temp;
+	 fastcgi_temp_path /tmp/fastcgi_temp;
+	 uwsgi_temp_path /tmp/uwsgi_temp;
+	 scgi_temp_path /tmp/scgi_temp;
 
-  server {
-	listen 8080;
-	server_name localhost;
+	 upstream kruize-api {
+	   server kruize:8080;
+	 }
 
-	root   /usr/share/nginx/html;
+	 server {
+	   listen 8080;
+	   server_name localhost;
 
-	location ^~ /api/ {
-	  rewrite ^/api(.*)$ $1 break;
-	  proxy_pass http://kruize-api;
-	}
+	   root   /usr/share/nginx/html;
 
-	location / {
-	  index index.html;
-	  error_page 404 =200 /index.html;
-	}
-  }
+	   location ^~ /api/ {
+	     rewrite ^/api(.*)$ $1 break;
+	     proxy_pass http://kruize-api;
+	   }
+
+	   location / {
+	     index index.html;
+	     error_page 404 =200 /index.html;
+	   }
+	 }
 }
 `
 	return &corev1.ConfigMap{
