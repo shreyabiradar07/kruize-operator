@@ -19,8 +19,8 @@ For examples of running Kruize and the operator, see [kruize-demos](https://gith
 ### Prerequisites
 
 **For Deployment:**
-- kubectl version v1.25.0+
-- Access to a Kubernetes v1.25.0+ or OpenShift v4.13+ cluster
+- kubectl version v1.26.0+
+- Access to a Kubernetes v1.26.0+ or OpenShift v4.13+ cluster
 - [Prometheus](https://github.com/prometheus/prometheus) (for Minikube, Kind clusters)
 
 **For Building/Development:**

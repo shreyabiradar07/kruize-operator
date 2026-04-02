@@ -660,7 +660,7 @@ spec:
   - email: csubrama@ibm.com
     name: Chandrakala Subramanyam
   maturity: alpha
-  minKubeVersion: 1.25.0
+  minKubeVersion: 1.26.0
   provider:
     name: Kruize
   version: 0.0.4
