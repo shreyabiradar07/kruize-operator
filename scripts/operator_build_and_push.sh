@@ -116,18 +116,28 @@ check_prerequisites() {
     log_success "Prerequisites check passed"
 }
 
+# Helper function that works on both GNU (Linux) and BSD (macOS) sed
+# Usage: portable_sed_inplace "s/pattern/replacement/" file
+portable_sed_inplace() {
+    local pattern="$1"
+    local file="$2"
+
+    case "$OSTYPE" in
+        darwin*)
+            sed -i '' "$pattern" "$file"
+            ;;
+        *)
+            sed -i "$pattern" "$file"
+            ;;
+    esac
+}
+
 # Update Makefile version
 update_makefile_version() {
     log_info "Updating Makefile version to ${VERSION}..."
     
     if [[ -f "Makefile" ]]; then
-        # Use portable sed -i that works on both GNU (Linux) and BSD (macOS) sed
-        # GNU sed accepts -i without argument, BSD sed requires -i '' for no backup
-        if [[ "$OSTYPE" == "Darwin" ]]; then
-            sed -i '' "s/^VERSION ?= .*/VERSION ?= ${VERSION}/" Makefile
-        else
-            sed -i "s/^VERSION ?= .*/VERSION ?= ${VERSION}/" Makefile
-        fi
+        portable_sed_inplace "s/^VERSION ?= .*/VERSION ?= ${VERSION}/" Makefile
         log_success "Makefile version updated"
     else
         log_error "Makefile not found"
@@ -142,8 +152,8 @@ update_csv_version() {
     # Update bundle CSV file
     CSV_FILE="bundle/manifests/kruize-operator.clusterserviceversion.yaml"
     if [[ -f "$CSV_FILE" ]]; then
-        sed -i "s|containerImage: .*|containerImage: ${OPERATOR_IMAGE}|" "$CSV_FILE"
-        sed -i "s/name: kruize-operator\.v.*/name: kruize-operator.v${VERSION}/" "$CSV_FILE"
+        portable_sed_inplace "s|containerImage: .*|containerImage: ${OPERATOR_IMAGE}|" "$CSV_FILE"
+        portable_sed_inplace "s/name: kruize-operator\.v.*/name: kruize-operator.v${VERSION}/" "$CSV_FILE"
         log_success "Bundle CSV updated"
     else
         log_info "Bundle CSV not found (will be generated during bundle build)"
@@ -152,7 +162,7 @@ update_csv_version() {
     # Update base CSV file
     BASE_CSV_FILE="config/manifests/bases/kruize-operator.clusterserviceversion.yaml"
     if [[ -f "$BASE_CSV_FILE" ]]; then
-        sed -i "s|containerImage: .*|containerImage: ${OPERATOR_IMAGE}|" "$BASE_CSV_FILE"
+        portable_sed_inplace "s|containerImage: .*|containerImage: ${OPERATOR_IMAGE}|" "$BASE_CSV_FILE"
         log_success "Base CSV updated"
     else
         log_info "Base CSV not found"
