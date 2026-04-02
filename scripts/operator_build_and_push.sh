@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to build and push operator and bundle images with verification
-# Usage: ./scripts/build-and-push-images.sh -o <operator_image> -b <bundle_image>
+# Usage: ./scripts/operator_build_and_push.sh -o <operator_image> -b <bundle_image>
 
 set -e  # Exit on error
 
@@ -32,10 +32,15 @@ usage() {
     echo "  -h    Show this help message"
     echo ""
     echo "Environment variables:"
-    echo "  CONTAINER_TOOL  Container tool to use (default: docker)"
+    echo "  CONTAINER_TOOL  Container tool to use for build, push, and verification (default: docker)"
+    echo "                  Supported values: docker, podman"
     echo ""
-    echo "Example:"
+    echo "Examples:"
+    echo "  # Using default docker"
     echo "  $0 -o quay.io/kruize/kruize-operator:0.0.5 -b quay.io/kruize/kruize-operator-bundle:0.0.5"
+    echo ""
+    echo "  # Using podman"
+    echo "  CONTAINER_TOOL=podman $0 -o quay.io/kruize/kruize-operator:0.0.5 -b quay.io/kruize/kruize-operator-bundle:0.0.5"
 }
 
 # Parse command line arguments
@@ -115,7 +120,13 @@ update_makefile_version() {
     log_info "Updating Makefile version to ${VERSION}..."
     
     if [[ -f "Makefile" ]]; then
-        sed -i "s/^VERSION ?= .*/VERSION ?= ${VERSION}/" Makefile
+        # Use portable sed -i that works on both GNU (Linux) and BSD (macOS) sed
+        # GNU sed accepts -i without argument, BSD sed requires -i '' for no backup
+        if [[ "$OSTYPE" == "Darwin" ]]; then
+            sed -i '' "s/^VERSION ?= .*/VERSION ?= ${VERSION}/" Makefile
+        else
+            sed -i "s/^VERSION ?= .*/VERSION ?= ${VERSION}/" Makefile
+        fi
         log_success "Makefile version updated"
     else
         log_error "Makefile not found"
@@ -151,8 +162,8 @@ update_csv_version() {
 build_and_push_operator() {
     log_info "Building and pushing operator image: ${OPERATOR_IMAGE}"
     
-    log_info "Running: make docker-build docker-push IMG=${OPERATOR_IMAGE}"
-    make docker-build docker-push IMG=${OPERATOR_IMAGE}
+    log_info "Running: make docker-build docker-push IMG=${OPERATOR_IMAGE} CONTAINER_TOOL=${CONTAINER_TOOL}"
+    make docker-build docker-push IMG=${OPERATOR_IMAGE} CONTAINER_TOOL=${CONTAINER_TOOL}
     
     log_success "Operator image built and pushed: ${OPERATOR_IMAGE}"
 }
@@ -174,8 +185,8 @@ verify_operator_image() {
 build_and_push_bundle() {
     log_info "Building and pushing bundle image: ${BUNDLE_IMAGE}"
     
-    log_info "Running: make bundle bundle-build bundle-push VERSION=${VERSION} IMG=${OPERATOR_IMAGE} BUNDLE_IMG=${BUNDLE_IMAGE}"
-    make bundle bundle-build bundle-push VERSION=${VERSION} IMG=${OPERATOR_IMAGE} BUNDLE_IMG=${BUNDLE_IMAGE}
+    log_info "Running: make bundle bundle-build bundle-push VERSION=${VERSION} IMG=${OPERATOR_IMAGE} BUNDLE_IMG=${BUNDLE_IMAGE} CONTAINER_TOOL=${CONTAINER_TOOL}"
+    make bundle bundle-build bundle-push VERSION=${VERSION} IMG=${OPERATOR_IMAGE} BUNDLE_IMG=${BUNDLE_IMAGE} CONTAINER_TOOL=${CONTAINER_TOOL}
     
     log_success "Bundle image built and pushed: ${BUNDLE_IMAGE}"
 }
