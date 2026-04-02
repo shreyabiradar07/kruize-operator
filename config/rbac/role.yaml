@@ -179,19 +179,19 @@ rules:
 - apiGroups:
   - batch
   resources:
-  - jobs
-  verbs:
-  - get
-  - list
-- apiGroups:
-  - batch/v1
-  resources:
   - cronjobs
   verbs:
   - create
   - get
   - list
   - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - get
+  - list
 - apiGroups:
   - extensions
   resources:
