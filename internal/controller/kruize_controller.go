@@ -68,7 +68,7 @@ type KruizeReconciler struct {
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;create
-//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=batch/v1,resources=cronjobs,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create
@@ -86,7 +86,7 @@ type KruizeReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;create
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=batch/v1,resources=cronjobs,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses/api,verbs=get;create;update
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=alertmanagers,verbs=get;list;watch
