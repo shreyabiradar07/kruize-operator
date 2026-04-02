@@ -80,7 +80,8 @@ fi
 # Extract version from image tags
 extract_version() {
     local image=$1
-    echo ${image} | grep -oP ':\K[^:]+$'
+    # Use POSIX-compatible parameter expansion instead of grep -P
+    echo "${image##*:}"
 }
 
 OPERATOR_VERSION=$(extract_version "$OPERATOR_IMAGE")
