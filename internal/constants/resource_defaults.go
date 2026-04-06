@@ -2,7 +2,10 @@ package constants
 
 // Default resource values for Kruize components
 
-// Database resource defaults
+// Database resource defaults for OpenShift
+// NOTE: For Minikube/Kind clusters, no default resource limits/requests are applied
+// for the database unless explicitly specified in the CR.
+// This allows for more flexible resource allocation in local development environments.
 const (
 	// DefaultDBCPURequest is the default CPU request for the database
 	DefaultDBCPURequest = "0.5"
@@ -14,7 +17,10 @@ const (
 	DefaultDBMemoryLimit = "100Mi"
 )
 
-// Kruize application resource defaults
+// Kruize application resource defaults for OpenShift
+// NOTE: For Minikube/Kind clusters, no default resource limits/requests are applied
+// for the Kruize application unless explicitly specified in the CR.
+// This allows for more flexible resource allocation in local development environments.
 const (
 	// DefaultKruizeCPURequest is the default CPU request for Kruize application
 	DefaultKruizeCPURequest = "0.7"

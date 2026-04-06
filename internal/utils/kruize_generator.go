@@ -93,7 +93,16 @@ func (g *KruizeResourceGenerator) parseResourceQuantity(value, defaultValue stri
 }
 
 // getDBResources returns database resource requirements with defaults
+// For minikube/kind, defaults are disabled unless explicitly specified in the CR
 func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
+	// For minikube/kind, only apply resources if explicitly specified in the CR
+	if (g.ClusterType == constants.ClusterTypeMinikube || g.ClusterType == constants.ClusterTypeKind) {
+		if g.KruizeSpec == nil || g.KruizeSpec.KruizeDB == nil || g.KruizeSpec.KruizeDB.Resources == nil {
+			// Return empty resource requirements for minikube/kind when not specified
+			return corev1.ResourceRequirements{}
+		}
+	}
+
 	cpuRequest := constants.DefaultDBCPURequest
 	cpuLimit := constants.DefaultDBCPULimit
 	memoryRequest := constants.DefaultDBMemoryRequest
@@ -124,7 +133,16 @@ func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
 }
 
 // getKruizeResources returns Kruize application resource requirements with defaults
+// For minikube/kind, defaults are disabled unless explicitly specified in the CR
 func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequirements {
+	// For minikube/kind, only apply resources if explicitly specified in the CR
+	if (g.ClusterType == constants.ClusterTypeMinikube || g.ClusterType == constants.ClusterTypeKind) {
+		if g.KruizeSpec == nil || g.KruizeSpec.Kruize == nil || g.KruizeSpec.Kruize.Resources == nil {
+			// Return empty resource requirements for minikube/kind when not specified
+			return corev1.ResourceRequirements{}
+		}
+	}
+
 	cpuRequest := constants.DefaultKruizeCPURequest
 	cpuLimit := constants.DefaultKruizeCPULimit
 	memoryRequest := constants.DefaultKruizeMemoryRequest
@@ -1258,9 +1276,8 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 			Kind:       "PersistentVolume",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      pvName,
-			Namespace: g.Namespace,
-			Labels:    labels,
+			Name:   pvName,
+			Labels: labels,
 		},
 		Spec: corev1.PersistentVolumeSpec{
 			StorageClassName: storageClassName,
@@ -1344,6 +1361,7 @@ func (g *KruizeResourceGenerator) kruizeDBDeploymentKubernetes() *appsv1.Deploym
 								{Name: "POSTGRES_PASSWORD", Value: "admin"},
 								{Name: "POSTGRES_USER", Value: "admin"},
 								{Name: "POSTGRES_DB", Value: "kruizeDB"},
+								{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},
 							},
 							Resources: g.getDBResources(),
 							Ports: []corev1.ContainerPort{
