@@ -101,8 +101,36 @@ func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
 			// Return empty resource requirements for minikube/kind when not specified
 			return corev1.ResourceRequirements{}
 		}
+		// For minikube/kind with explicit resources, use only what's specified (no defaults)
+		res := g.KruizeSpec.KruizeDB.Resources
+		requirements := corev1.ResourceRequirements{}
+		
+		if res.Requests != nil {
+			if res.Requests.CPU != "" || res.Requests.Memory != "" {
+				requirements.Requests = corev1.ResourceList{}
+				if res.Requests.CPU != "" {
+					requirements.Requests[corev1.ResourceCPU] = resource.MustParse(res.Requests.CPU)
+				}
+				if res.Requests.Memory != "" {
+					requirements.Requests[corev1.ResourceMemory] = resource.MustParse(res.Requests.Memory)
+				}
+			}
+		}
+		if res.Limits != nil {
+			if res.Limits.CPU != "" || res.Limits.Memory != "" {
+				requirements.Limits = corev1.ResourceList{}
+				if res.Limits.CPU != "" {
+					requirements.Limits[corev1.ResourceCPU] = resource.MustParse(res.Limits.CPU)
+				}
+				if res.Limits.Memory != "" {
+					requirements.Limits[corev1.ResourceMemory] = resource.MustParse(res.Limits.Memory)
+				}
+			}
+		}
+		return requirements
 	}
 
+	// For OpenShift, use defaults
 	cpuRequest := constants.DefaultDBCPURequest
 	cpuLimit := constants.DefaultDBCPULimit
 	memoryRequest := constants.DefaultDBMemoryRequest
@@ -141,8 +169,36 @@ func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequiremen
 			// Return empty resource requirements for minikube/kind when not specified
 			return corev1.ResourceRequirements{}
 		}
+		// For minikube/kind with explicit resources, use only what's specified (no defaults)
+		res := g.KruizeSpec.Kruize.Resources
+		requirements := corev1.ResourceRequirements{}
+		
+		if res.Requests != nil {
+			if res.Requests.CPU != "" || res.Requests.Memory != "" {
+				requirements.Requests = corev1.ResourceList{}
+				if res.Requests.CPU != "" {
+					requirements.Requests[corev1.ResourceCPU] = resource.MustParse(res.Requests.CPU)
+				}
+				if res.Requests.Memory != "" {
+					requirements.Requests[corev1.ResourceMemory] = resource.MustParse(res.Requests.Memory)
+				}
+			}
+		}
+		if res.Limits != nil {
+			if res.Limits.CPU != "" || res.Limits.Memory != "" {
+				requirements.Limits = corev1.ResourceList{}
+				if res.Limits.CPU != "" {
+					requirements.Limits[corev1.ResourceCPU] = resource.MustParse(res.Limits.CPU)
+				}
+				if res.Limits.Memory != "" {
+					requirements.Limits[corev1.ResourceMemory] = resource.MustParse(res.Limits.Memory)
+				}
+			}
+		}
+		return requirements
 	}
 
+	// For OpenShift, use defaults
 	cpuRequest := constants.DefaultKruizeCPURequest
 	cpuLimit := constants.DefaultKruizeCPULimit
 	memoryRequest := constants.DefaultKruizeMemoryRequest
