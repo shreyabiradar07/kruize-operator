@@ -27,7 +27,7 @@ make deploy-openshift IMG=<your-registry>/kruize-operator:tag
 
 Deploys the Kruize operator to local Kubernetes clusters (Minikube, KIND, etc.) with the following configuration:
 - **Namespace**: `monitoring`
-- **Platform**: Kubernetes 1.26.0+
+- **Platform**: Kubernetes 1.23.0+
 - **Features**: Standard Kubernetes resources with Ingress support
 
 **Usage:**
