@@ -521,7 +521,7 @@ var _ = Describe("Kruize Controller", func() {
 				},
 			}
 
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruize.Spec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruize.Spec, getTestContext())
 
 			namespacedResources := generator.NamespacedResources()
 			Expect(namespacedResources).NotTo(BeEmpty())
@@ -551,7 +551,7 @@ var _ = Describe("Kruize Controller", func() {
 
 		It("should allow partial resource overrides while preserving defaults", func() {
 			// First, generate resources with default configuration to capture default resources
-			defaultGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			defaultGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 			defaultNamespacedResources := defaultGenerator.NamespacedResources()
 
 			defaultKruizeDeployment := findDeployment(defaultNamespacedResources, "kruize")
@@ -570,7 +570,7 @@ var _ = Describe("Kruize Controller", func() {
 				KruizeDB: createKruizeDBConfig("250m", "", "", ""),
 				Kruize:   createKruizeAppConfig("300m", "", "", ""),
 			}
-			partialGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, partialSpec, getTestContext())
+			partialGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, partialSpec, getTestContext())
 			partialNamespacedResources := partialGenerator.NamespacedResources()
 
 			partialKruizeDeployment := findDeployment(partialNamespacedResources, "kruize")
@@ -753,7 +753,7 @@ var _ = Describe("Kruize Controller", func() {
 					Kruize:   createKruizeAppConfig("2.0", "2.5", "1Gi", "1.5Gi"),
 					KruizeDB: createKruizeDBConfig("0.75", "1.5", "512Mi", "1Gi"),
 				}
-				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", clusterType, customSpec, getTestContext())
+				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", clusterType, customSpec, getTestContext())
 				namespacedResources := resourceMethod(generator)
 
 				// Check for Deployment resources and validate custom resource configuration
@@ -798,7 +798,7 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate Kruize-ui deployment specification", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext()))
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			namespacedResources := generator.NamespacedResources()
 			
