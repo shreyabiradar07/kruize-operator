@@ -287,20 +287,25 @@ endef
 
 .PHONY: operator-sdk
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
-operator-sdk: ## Download operator-sdk locally if necessary.
-ifeq (,$(wildcard $(OPERATOR_SDK)))
-ifeq (, $(shell which operator-sdk 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(OPERATOR_SDK)) ;\
-	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
-	chmod +x $(OPERATOR_SDK) ;\
-	}
-else
-OPERATOR_SDK = $(shell which operator-sdk)
-endif
-endif
+operator-sdk: $(LOCALBIN) ## Download operator-sdk locally if necessary.
+	@if [ ! -f $(OPERATOR_SDK) ]; then \
+		if ! command -v operator-sdk >/dev/null 2>&1; then \
+			echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)..." ;\
+			mkdir -p $(dir $(OPERATOR_SDK)) ;\
+			OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
+			case $$ARCH in \
+				x86_64) ARCH=amd64 ;; \
+				aarch64) ARCH=arm64 ;; \
+			esac ;\
+			curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+			chmod +x $(OPERATOR_SDK) ;\
+			echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
+		else \
+			echo "Using system operator-sdk: $$(which operator-sdk)" ;\
+		fi \
+	else \
+		echo "operator-sdk already exists at $(OPERATOR_SDK)" ;\
+	fi
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
