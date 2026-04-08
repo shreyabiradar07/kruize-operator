@@ -9,8 +9,5 @@ rules:
   - apiGroups: ["apps"]
     resources: ["replicasets", "daemonsets"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["autoscaling"]
-    resources: ["horizontalpodautoscalers"]
-    verbs: ["get", "list", "watch"]
   - nonResourceURLs: ["/metrics"]
     verbs: ["get"]

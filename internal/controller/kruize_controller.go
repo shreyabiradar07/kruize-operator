@@ -283,6 +283,8 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 		kruize.Spec.Autotune_image,
 		kruize.Spec.Autotune_ui_image,
 		clusterType,
+		&kruize.Spec,
+		ctx,
 	)
 
 
