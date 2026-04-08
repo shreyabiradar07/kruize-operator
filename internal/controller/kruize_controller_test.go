@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -705,17 +706,37 @@ var _ = Describe("Kruize Controller", func() {
 
 				// Validate Kruize deployment has default resource configuration
 				kruizeContainer := getContainer(kruizeDeployment, "kruize")
-				Expect(kruizeContainer.Resources.Requests.Cpu().String()).To(Equal("700m"))
-				Expect(kruizeContainer.Resources.Requests.Memory().String()).To(Equal("768Mi"))
-				Expect(kruizeContainer.Resources.Limits.Cpu().String()).To(Equal("700m"))
-				Expect(kruizeContainer.Resources.Limits.Memory().String()).To(Equal("768Mi"))
+				expectedKruizeCPURequest := constants.DefaultKruizeCPURequest
+				expectedKruizeMemoryRequest := constants.DefaultKruizeMemoryRequest
+				expectedKruizeCPULimit := constants.DefaultKruizeCPULimit
+				expectedKruizeMemoryLimit := constants.DefaultKruizeMemoryLimit
+				expectedDBCPURequest := constants.DefaultDBCPURequest
+				expectedDBMemoryRequest := constants.DefaultDBMemoryRequest
+				expectedDBCPULimit := constants.DefaultDBCPULimit
+				expectedDBMemoryLimit := constants.DefaultDBMemoryLimit
+
+				if clusterType == constants.ClusterTypeMinikube || clusterType == constants.ClusterTypeKind {
+					expectedKruizeCPURequest = "0"
+					expectedKruizeMemoryRequest = "0"
+					expectedKruizeCPULimit = "0"
+					expectedKruizeMemoryLimit = "0"
+					expectedDBCPURequest = "0"
+					expectedDBMemoryRequest = "0"
+					expectedDBCPULimit = "0"
+					expectedDBMemoryLimit = "0"
+				}
+
+				Expect(kruizeContainer.Resources.Requests.Cpu().Cmp(resource.MustParse(expectedKruizeCPURequest))).To(Equal(0))
+				Expect(kruizeContainer.Resources.Requests.Memory().Cmp(resource.MustParse(expectedKruizeMemoryRequest))).To(Equal(0))
+				Expect(kruizeContainer.Resources.Limits.Cpu().Cmp(resource.MustParse(expectedKruizeCPULimit))).To(Equal(0))
+				Expect(kruizeContainer.Resources.Limits.Memory().Cmp(resource.MustParse(expectedKruizeMemoryLimit))).To(Equal(0))
 
 				// Validate DB deployment has default resource configuration
 				dbContainer := getContainer(kruizeDBDeployment, "kruize-db")
-				Expect(dbContainer.Resources.Requests.Cpu().String()).To(Equal("500m"))
-				Expect(dbContainer.Resources.Requests.Memory().String()).To(Equal("100Mi"))
-				Expect(dbContainer.Resources.Limits.Cpu().String()).To(Equal("500m"))
-				Expect(dbContainer.Resources.Limits.Memory().String()).To(Equal("100Mi"))
+				Expect(dbContainer.Resources.Requests.Cpu().Cmp(resource.MustParse(expectedDBCPURequest))).To(Equal(0))
+				Expect(dbContainer.Resources.Requests.Memory().Cmp(resource.MustParse(expectedDBMemoryRequest))).To(Equal(0))
+				Expect(dbContainer.Resources.Limits.Cpu().Cmp(resource.MustParse(expectedDBCPULimit))).To(Equal(0))
+				Expect(dbContainer.Resources.Limits.Memory().Cmp(resource.MustParse(expectedDBMemoryLimit))).To(Equal(0))
 			},
 			Entry("for OpenShift", constants.ClusterTypeOpenShift, func(g *utils.KruizeResourceGenerator) []client.Object {
 				return g.NamespacedResources()
@@ -776,7 +797,7 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate Kruize-ui deployment specification", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift)
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			namespacedResources := generator.NamespacedResources()
 			
@@ -922,10 +943,10 @@ var _ = Describe("Kruize Controller", func() {
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
 			container := getContainer(kruizeDeployment, "kruize")
 			
-			// Verify default values for unset fields
-			Expect(container.Resources.Requests.Cpu().String()).To(Equal("700m"))
-			Expect(container.Resources.Requests.Memory().String()).To(Equal("768Mi"))
-			Expect(container.Resources.Limits.Cpu().String()).To(Equal("700m"))
+			// Verify minikube leaves unset fields empty while preserving explicit values
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("0"))
+			Expect(container.Resources.Requests.Memory().String()).To(Equal("0"))
+			Expect(container.Resources.Limits.Cpu().String()).To(Equal("0"))
 			// Verify custom memory limit
 			Expect(container.Resources.Limits.Memory().String()).To(Equal("2Gi"))
 		})
@@ -942,14 +963,14 @@ var _ = Describe("Kruize Controller", func() {
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
 			container := getContainer(kruizeDBDeployment, "kruize-db")
 			
-			// Verify default CPU request
-			Expect(container.Resources.Requests.Cpu().String()).To(Equal("500m"))
+			// Verify minikube leaves unspecified CPU request empty
+			Expect(container.Resources.Requests.Cpu().String()).To(Equal("0"))
 			// Verify custom memory request
 			Expect(container.Resources.Requests.Memory().String()).To(Equal("256Mi"))
 			// Verify custom CPU limit
 			Expect(container.Resources.Limits.Cpu().String()).To(Equal("1"))
-			// Verify default memory limit
-			Expect(container.Resources.Limits.Memory().String()).To(Equal("100Mi"))
+			// Verify minikube leaves unspecified memory limit empty
+			Expect(container.Resources.Limits.Memory().String()).To(Equal("0"))
 		})
 	})
 
@@ -972,7 +993,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(clusterResources)
+			pvc := findPersistentVolumeClaim(generator.NamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("custom-storage"))
@@ -997,7 +1018,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(clusterResources)
+			pvc := findPersistentVolumeClaim(generator.KubernetesNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("2Gi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("k8s-storage"))
@@ -1019,7 +1040,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("5Gi"))
 
 			// Find the PVC and verify it uses PVStorageSize
-			pvc := findPersistentVolumeClaim(clusterResources)
+			pvc := findPersistentVolumeClaim(generator.NamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			// PVC should use PVStorageSize since PVCStorageSize was not specified
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("5Gi"))
@@ -1040,7 +1061,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("4Gi"))
 
 			// Find the PVC and verify it uses PVStorageSize
-			pvc := findPersistentVolumeClaim(clusterResources)
+			pvc := findPersistentVolumeClaim(generator.KubernetesNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			// PVC should use PVStorageSize since PVCStorageSize was not specified
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("4Gi"))
@@ -1060,7 +1081,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(clusterResources)
+			pvc := findPersistentVolumeClaim(generator.NamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("500Mi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("manual"))
@@ -1076,15 +1097,15 @@ var _ = Describe("Kruize Controller", func() {
 			pv := findPersistentVolume(clusterResources)
 			Expect(pv).NotTo(BeNil(), "PersistentVolume should exist")
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("1Gi"))
-			Expect(pv.Spec.StorageClassName).To(Equal("manual"))
-			Expect(pv.Spec.PersistentVolumeSource.HostPath.Path).To(Equal("/tmp/data"))
+			Expect(pv.Spec.StorageClassName).To(Equal(""))
+			Expect(pv.Spec.PersistentVolumeSource.HostPath.Path).To(Equal("/data/postgres"))
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(clusterResources)
+			pvc := findPersistentVolumeClaim(generator.KubernetesNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
-			Expect(*pvc.Spec.StorageClassName).To(Equal("manual"))
+			Expect(pvc.Spec.StorageClassName).To(BeNil())
 			Expect(pvc.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 		})
 	})
