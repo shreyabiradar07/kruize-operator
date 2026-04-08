@@ -292,15 +292,11 @@ operator-sdk: $(LOCALBIN) ## Download operator-sdk locally if necessary.
 		if ! command -v operator-sdk >/dev/null 2>&1; then \
 			echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)..." ;\
 			mkdir -p $(dir $(OPERATOR_SDK)) ;\
-			if command -v go >/dev/null 2>&1; then \
-				OS=$$(go env GOOS) && ARCH=$$(go env GOARCH) ;\
-			else \
-				OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
-				case $$ARCH in \
-					x86_64) ARCH=amd64 ;; \
-					aarch64) ARCH=arm64 ;; \
-				esac ;\
-			fi ;\
+			OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
+			case $$ARCH in \
+				x86_64) ARCH=amd64 ;; \
+				aarch64) ARCH=arm64 ;; \
+			esac ;\
 			curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
 			chmod +x $(OPERATOR_SDK) ;\
 			echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
