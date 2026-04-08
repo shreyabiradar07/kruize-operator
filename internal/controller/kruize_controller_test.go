@@ -775,15 +775,24 @@ var _ = Describe("Kruize Controller", func() {
 			getContainer(kruizeDeployment, "kruize")
 		})
 
-		It("should generate Kruize-ui pod specification", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+		It("should generate Kruize-ui deployment specification", func() {
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift)
 
 			namespacedResources := generator.NamespacedResources()
-
-			// Find the Kruize UI pod
-			kruizeUIPod := findTypedResource[*corev1.Pod](namespacedResources, "kruize-ui-nginx-pod", "", "")
-			Expect(kruizeUIPod).NotTo(BeNil(), "Kruize UI pod should exist")
-			Expect(kruizeUIPod.Spec.Containers).NotTo(BeEmpty())
+			
+			// Find the Kruize UI deployment
+			var kruizeUIDeployment *appsv1.Deployment
+			for _, resource := range namespacedResources {
+				if resource.GetObjectKind().GroupVersionKind().Kind == "Deployment" && resource.GetName() == "kruize-ui-nginx" {
+					var ok bool
+					kruizeUIDeployment, ok = resource.(*appsv1.Deployment)
+					Expect(ok).To(BeTrue(), "Resource should be a valid Deployment")
+					break
+				}
+			}
+			
+			Expect(kruizeUIDeployment).NotTo(BeNil(), "Kruize UI deployment should exist")
+			Expect(kruizeUIDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 		})
 
 		It("should generate Kruize-db pod specification", func() {
@@ -1258,17 +1267,17 @@ var _ = Describe("Kruize Controller", func() {
     		Expect(kruizeContainer).NotTo(BeNil(), "Kruize container should exist in deployment")
     		Expect(kruizeContainer.Image).To(Equal(constants.GetDefaultAutotuneImage()),
     			"Kruize deployment should use default Autotune image")
-
-    		// Find and verify UI pod using helper
-    		kruizeUIPod := findTypedResource[*corev1.Pod](namespacedResources, "kruize-ui-nginx-pod", "app", "kruize-ui-nginx")
-    		Expect(kruizeUIPod).NotTo(BeNil(), "Kruize UI pod should be generated")
-    		Expect(kruizeUIPod.Spec.Containers).NotTo(BeEmpty())
+    
+    		// Find and verify UI deployment using helper
+    		kruizeUIDeployment := findTypedResource[*appsv1.Deployment](namespacedResources, "kruize-ui-nginx", "app", "kruize-ui-nginx")
+    		Expect(kruizeUIDeployment).NotTo(BeNil(), "Kruize UI deployment should be generated")
+    		Expect(kruizeUIDeployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
     		
     		// Find the kruize-ui-nginx container by name using helper
-    		uiContainer := findContainerByName(kruizeUIPod.Spec.Containers, "kruize-ui-nginx-container")
-    		Expect(uiContainer).NotTo(BeNil(), "Kruize UI container should exist in pod")
+    		uiContainer := findContainerByName(kruizeUIDeployment.Spec.Template.Spec.Containers, "kruize-ui-nginx-container")
+    		Expect(uiContainer).NotTo(BeNil(), "Kruize UI container should exist in deployment")
     		Expect(uiContainer.Image).To(Equal(constants.GetDefaultUIImage()),
-    			"Kruize UI pod should use default UI image")
+    			"Kruize UI deployment should use default UI image")
     	})
 
     	It("should use custom images when specified", func() {

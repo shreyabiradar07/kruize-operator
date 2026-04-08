@@ -274,6 +274,20 @@ var _ = Describe("controller", Ordered, func() {
 				return nil
 			}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
+			By("checking that Kruize UI deployment is ready")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "deployment", "kruize-ui-nginx", "-n", namespace, "-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				if err != nil {
+					return err
+				}
+				if string(output) != "1" {
+					return fmt.Errorf("UI deployment not ready")
+				}
+				return nil
+			}, 3*time.Minute, 10*time.Second).Should(Succeed())
+
+
 			By("verifying deployed Kruize image")
 			cmd = exec.Command("kubectl", "get", "deployment", "kruize", "-n", namespace, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
 			output, err := utils.Run(cmd)
@@ -290,6 +304,25 @@ var _ = Describe("controller", Ordered, func() {
 				}
 			} else {
 				fmt.Fprintf(GinkgoWriter, "Using default Kruize image from CR: %s\n", deployedImage)
+			}
+
+			By("verifying deployed Kruize UI image")
+			cmd = exec.Command("kubectl", "get", "deployment", "kruize-ui-nginx", "-n", namespace, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
+			output, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			deployedUIImage := strings.TrimSpace(string(output))
+			fmt.Fprintf(GinkgoWriter, "Deployed Kruize UI image: %s\n", deployedUIImage)
+			
+			// If custom Kruize UI image was specified, verify it matches and fail on mismatch
+			if kruizeUIImage != "" {
+				fmt.Fprintf(GinkgoWriter, "Validating deployed UI image against KRUIZE_UI_IMAGE: %s\n", kruizeUIImage)
+				ExpectWithOffset(1, deployedUIImage).To(
+					Equal(kruizeUIImage),
+					fmt.Sprintf("Deployed UI image %s does not match KRUIZE_UI_IMAGE %s", deployedUIImage, kruizeUIImage),
+				)
+				fmt.Fprintf(GinkgoWriter, "✓ Deployed UI image matches specified KRUIZE_UI_IMAGE: %s\n", kruizeUIImage)
+			} else {
+				fmt.Fprintf(GinkgoWriter, "Using default Kruize UI image from CR: %s\n", deployedUIImage)
 			}
 
 			By("verifying Kruize API is responding")

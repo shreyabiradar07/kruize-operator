@@ -502,7 +502,7 @@ func (g *KruizeResourceGenerator) NamespacedResources() []client.Object {
 		g.kruizeServiceMonitor(),
 		g.nginxConfigMap(),
 		g.kruizeUINginxService(),
-		g.kruizeUINginxPod(),
+		g.kruizeUINginxDeployment(),
 		g.deletePartitionCronJob(),
 	}
 
@@ -1049,81 +1049,93 @@ func (g *KruizeResourceGenerator) kruizeService() *corev1.Service {
 	}
 }
 
-func (g *KruizeResourceGenerator) kruizeUINginxPod() *corev1.Pod {
-	return &corev1.Pod{
+
+func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
+	replicas := int32(1)
+	
+	// Build pod security context based on cluster type
+	podSecurityContext := &corev1.PodSecurityContext{
+		RunAsNonRoot: boolPtr(true),
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+	
+	// Only set RunAsUser for non-OpenShift clusters
+	// OpenShift SCC will reject hardcoded UIDs and assign its own
+	if g.ClusterType != constants.ClusterTypeOpenShift {
+		podSecurityContext.RunAsUser = int64Ptr(101)
+	}
+	
+	return &appsv1.Deployment{
 		// The TypeMeta tells the client which kind of object this is.
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Pod",
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
 		},
 		// The ObjectMeta contains the name, namespace, and labels.
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-ui-nginx-pod",
-			Namespace: g.Namespace, // We use the namespace from our generator struct.
+			Name:      "kruize-ui-nginx",
+			Namespace: g.Namespace,
 			Labels: map[string]string{
 				"app": "kruize-ui-nginx",
 			},
 		},
-		// The Spec defines the desired state of the Pod.
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:            "kruize-ui-nginx-container",
-					Image:           g.Autotune_ui_image,
-					ImagePullPolicy: corev1.PullAlways,
-					Env: []corev1.EnvVar{
-						{Name: "KRUIZE_API_URL", Value: "http://kruize:8080"},
-						{Name: "REACT_APP_KRUIZE_API_URL", Value: "http://kruize:8080"},
-						{Name: "KRUIZE_UI_API_URL", Value: "http://kruize:8080"},
-						{Name: "API_URL", Value: "http://kruize:8080"},
-						{Name: "KRUIZE_UI_ENV", Value: "production"},
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "nginx-config-volume",
-							MountPath: "/etc/nginx/nginx.conf",
-							SubPath:   "nginx.conf",
-						},
-						{
-							Name:      "nginx-cache",
-							MountPath: "/var/cache/nginx",
-						},
-						{Name: "nginx-pid", MountPath: "/var/run"},
-						{Name: "nginx-tmp", MountPath: "/tmp"},
-					},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: boolPtr(false),
-						RunAsNonRoot:             boolPtr(true),
-						RunAsUser:                int64Ptr(101),
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{"ALL"},
-						},
-						SeccompProfile: &corev1.SeccompProfile{
-							Type: corev1.SeccompProfileTypeRuntimeDefault,
-						},
-					},
+		// The Spec defines the desired state of the Deployment.
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Strategy: appsv1.DeploymentStrategy{
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+			},
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "kruize-ui-nginx",
 				},
 			},
-			Volumes: []corev1.Volume{
-				{
-					Name: "nginx-config-volume",
-					VolumeSource: corev1.VolumeSource{
-						ConfigMap: &corev1.ConfigMapVolumeSource{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "nginx-config",
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "kruize-ui-nginx",
+					},
+				},
+				Spec: corev1.PodSpec{
+					SecurityContext: podSecurityContext,
+					Containers: []corev1.Container{
+						{
+							Name:            "kruize-ui-nginx-container",
+							Image:           g.Autotune_ui_image,
+							ImagePullPolicy: corev1.PullAlways,
+							Env: []corev1.EnvVar{
+								{Name: "KRUIZE_UI_ENV", Value: "production"},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "nginx-config-volume",
+									MountPath: "/etc/nginx/nginx.conf",
+									SubPath:   "nginx.conf",
+								},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								AllowPrivilegeEscalation: boolPtr(false),
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{"ALL"},
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "nginx-config-volume",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "nginx-config",
+									},
+								},
 							},
 						},
 					},
 				},
-				// Define the emptyDir volume that will be used for caching.
-				{
-					Name: "nginx-cache",
-					VolumeSource: corev1.VolumeSource{
-						EmptyDir: &corev1.EmptyDirVolumeSource{},
-					},
-				},
-				{Name: "nginx-pid", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-				{Name: "nginx-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 			},
 		},
 	}
@@ -1133,27 +1145,34 @@ func (g *KruizeResourceGenerator) kruizeUINginxPod() *corev1.Pod {
 func (g *KruizeResourceGenerator) nginxConfigMap() *corev1.ConfigMap {
 	nginxConf := `
 events {}
+pid /tmp/nginx.pid;
 http {
-  upstream kruize-api {
-	server kruize:8080;
-  }
+	 client_body_temp_path /tmp/client_temp;
+	 proxy_temp_path /tmp/proxy_temp;
+	 fastcgi_temp_path /tmp/fastcgi_temp;
+	 uwsgi_temp_path /tmp/uwsgi_temp;
+	 scgi_temp_path /tmp/scgi_temp;
 
-  server {
-	listen 8080;
-	server_name localhost;
+	 upstream kruize-api {
+	   server kruize:8080;
+	 }
 
-	root   /usr/share/nginx/html;
+	 server {
+	   listen 8080;
+	   server_name localhost;
 
-	location ^~ /api/ {
-	  rewrite ^/api(.*)$ $1 break;
-	  proxy_pass http://kruize-api;
-	}
+	   root   /usr/share/nginx/html;
 
-	location / {
-	  index index.html;
-	  error_page 404 =200 /index.html;
-	}
-  }
+	   location ^~ /api/ {
+	     rewrite ^/api(.*)$ $1 break;
+	     proxy_pass http://kruize-api;
+	   }
+
+	   location / {
+	     index index.html;
+	     error_page 404 =200 /index.html;
+	   }
+	 }
 }
 `
 	return &corev1.ConfigMap{
@@ -1869,7 +1888,7 @@ func (g *KruizeResourceGenerator) KubernetesNamespacedResources() []client.Objec
 		g.kruizeServiceMonitor(),
 		g.nginxConfigMap(),
 		g.kruizeUINginxService(),
-		g.kruizeUINginxPod(),
+		g.kruizeUINginxDeployment(),
 		g.deletePartitionCronJob(),
 	}
 }
