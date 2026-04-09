@@ -716,27 +716,30 @@ var _ = Describe("Kruize Controller", func() {
 				expectedDBMemoryLimit := constants.DefaultDBMemoryLimit
 
 				if clusterType == constants.ClusterTypeMinikube || clusterType == constants.ClusterTypeKind {
-					expectedKruizeCPURequest = "0"
-					expectedKruizeMemoryRequest = "0"
-					expectedKruizeCPULimit = "0"
-					expectedKruizeMemoryLimit = "0"
-					expectedDBCPURequest = "0"
-					expectedDBMemoryRequest = "0"
-					expectedDBCPULimit = "0"
-					expectedDBMemoryLimit = "0"
+					// For minikube/kind, resources should be empty if not specified in the CR
+					// This allows flexible resource allocation in local development environments
+					Expect(kruizeContainer.Resources.Requests).To(Or(BeNil(), BeEmpty()))
+					Expect(kruizeContainer.Resources.Limits).To(Or(BeNil(), BeEmpty()))
+					
+					// Validate DB deployment has empty resource configuration
+					dbContainer := getContainer(kruizeDBDeployment, "kruize-db")
+					Expect(dbContainer.Resources.Requests).To(Or(BeNil(), BeEmpty()))
+					Expect(dbContainer.Resources.Limits).To(Or(BeNil(), BeEmpty()))
+				} else {
+					// For OpenShift, validate default resource configuration
+					// Note: .Cmp() returns 0 when quantities are equal, -1 when less, 1 when greater
+					Expect(kruizeContainer.Resources.Requests.Cpu().Cmp(resource.MustParse(expectedKruizeCPURequest))).To(Equal(0))
+					Expect(kruizeContainer.Resources.Requests.Memory().Cmp(resource.MustParse(expectedKruizeMemoryRequest))).To(Equal(0))
+					Expect(kruizeContainer.Resources.Limits.Cpu().Cmp(resource.MustParse(expectedKruizeCPULimit))).To(Equal(0))
+					Expect(kruizeContainer.Resources.Limits.Memory().Cmp(resource.MustParse(expectedKruizeMemoryLimit))).To(Equal(0))
+
+					// Validate DB deployment has default resource configuration
+					dbContainer := getContainer(kruizeDBDeployment, "kruize-db")
+					Expect(dbContainer.Resources.Requests.Cpu().Cmp(resource.MustParse(expectedDBCPURequest))).To(Equal(0))
+					Expect(dbContainer.Resources.Requests.Memory().Cmp(resource.MustParse(expectedDBMemoryRequest))).To(Equal(0))
+					Expect(dbContainer.Resources.Limits.Cpu().Cmp(resource.MustParse(expectedDBCPULimit))).To(Equal(0))
+					Expect(dbContainer.Resources.Limits.Memory().Cmp(resource.MustParse(expectedDBMemoryLimit))).To(Equal(0))
 				}
-
-				Expect(kruizeContainer.Resources.Requests.Cpu().Cmp(resource.MustParse(expectedKruizeCPURequest))).To(Equal(0))
-				Expect(kruizeContainer.Resources.Requests.Memory().Cmp(resource.MustParse(expectedKruizeMemoryRequest))).To(Equal(0))
-				Expect(kruizeContainer.Resources.Limits.Cpu().Cmp(resource.MustParse(expectedKruizeCPULimit))).To(Equal(0))
-				Expect(kruizeContainer.Resources.Limits.Memory().Cmp(resource.MustParse(expectedKruizeMemoryLimit))).To(Equal(0))
-
-				// Validate DB deployment has default resource configuration
-				dbContainer := getContainer(kruizeDBDeployment, "kruize-db")
-				Expect(dbContainer.Resources.Requests.Cpu().Cmp(resource.MustParse(expectedDBCPURequest))).To(Equal(0))
-				Expect(dbContainer.Resources.Requests.Memory().Cmp(resource.MustParse(expectedDBMemoryRequest))).To(Equal(0))
-				Expect(dbContainer.Resources.Limits.Cpu().Cmp(resource.MustParse(expectedDBCPULimit))).To(Equal(0))
-				Expect(dbContainer.Resources.Limits.Memory().Cmp(resource.MustParse(expectedDBMemoryLimit))).To(Equal(0))
 			},
 			Entry("for OpenShift", constants.ClusterTypeOpenShift, func(g *utils.KruizeResourceGenerator) []client.Object {
 				return g.NamespacedResources()
