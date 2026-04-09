@@ -1345,6 +1345,24 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 	pvName := g.getPVName("kruize-db-pv")
 	labels := g.getPVLabels(map[string]string{"app": "kruize-db"})
 
+	pvSpec := corev1.PersistentVolumeSpec{
+		Capacity: corev1.ResourceList{
+			corev1.ResourceStorage: g.parseResourceQuantity(pvStorageSize, constants.DefaultKubernetesPVStorageSize),
+		},
+		AccessModes:                   accessModes,
+		PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+		PersistentVolumeSource: corev1.PersistentVolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{
+				Path: hostPath,
+			},
+		},
+	}
+
+	// Only set StorageClassName if it's not empty
+	if storageClassName != "" {
+		pvSpec.StorageClassName = storageClassName
+	}
+
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -1354,19 +1372,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.P
 			Name:   pvName,
 			Labels: labels,
 		},
-		Spec: corev1.PersistentVolumeSpec{
-			StorageClassName: storageClassName,
-			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: g.parseResourceQuantity(pvStorageSize, constants.DefaultKubernetesPVStorageSize),
-			},
-			AccessModes:                   accessModes,
-			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
-			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: hostPath,
-				},
-			},
-		},
+		Spec: pvSpec,
 	}
 }
 
@@ -1375,6 +1381,20 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *cor
 	_, pvcStorageSize, storageClassName, _, accessModes := g.getPVConfigKubernetes()
 	pvcName := g.getPVCName("kruize-db-pvc")
 	labels := g.getPVCLabels(map[string]string{"app": "kruize-db"})
+
+	pvcSpec := corev1.PersistentVolumeClaimSpec{
+		AccessModes: accessModes,
+		Resources: corev1.VolumeResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceStorage: g.parseResourceQuantity(pvcStorageSize, constants.DefaultKubernetesPVStorageSize),
+			},
+		},
+	}
+
+	// Only set StorageClassName if it's not empty
+	if storageClassName != "" {
+		pvcSpec.StorageClassName = &storageClassName
+	}
 
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
@@ -1386,15 +1406,7 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *cor
 			Namespace: g.Namespace,
 			Labels:    labels,
 		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			StorageClassName: &storageClassName,
-			AccessModes:      accessModes,
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: g.parseResourceQuantity(pvcStorageSize, constants.DefaultKubernetesPVStorageSize),
-				},
-			},
-		},
+		Spec: pvcSpec,
 	}
 }
 
