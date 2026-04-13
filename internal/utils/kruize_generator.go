@@ -3,7 +3,6 @@ package utils
 import (
 	"context"
 	"fmt"
-
 	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 	"github.com/kruize/kruize-operator/internal/constants"
 	routev1 "github.com/openshift/api/route/v1"
@@ -34,22 +33,27 @@ type KruizeResourceGenerator struct {
 	Namespace         string
 	Autotune_image    string
 	Autotune_ui_image string
+	Optimizer_image   string
 	ClusterType       string // "openshift", "minikube", or "kind"
 	KruizeSpec        *kruizev1alpha1.KruizeSpec
 	Ctx               context.Context
 }
 
 // NewKruizeResourceGenerator creates a new generator for Kruize resources.
-func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string, kruizeSpec *kruizev1alpha1.KruizeSpec, ctx context.Context) *KruizeResourceGenerator {
+func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string,  optimizerImage string, clusterType string, kruizeSpec *kruizev1alpha1.KruizeSpec, ctx context.Context) *KruizeResourceGenerator {
 	// If no image is provided from the CR, use a sensible default.
 	// The default can be configured via environment variables:
 	// - DEFAULT_AUTOTUNE_IMAGE: Override the default Autotune image
 	// - DEFAULT_AUTOTUNE_UI_IMAGE: Override the default Autotune UI image
+	// - DEFAULT_OPTIMIZER_IMAGE: Override the default Optimizer image
 	if autotuneImage == "" {
 		autotuneImage = constants.GetDefaultAutotuneImage()
 	}
 	if autotuneUIImage == "" {
 		autotuneUIImage = constants.GetDefaultUIImage()
+	}
+	if optimizerImage == "" {
+		optimizerImage = constants.GetDefaultOptimizerImage()
 	}
 	if clusterType == "" {
 		clusterType = constants.ClusterTypeOpenShift // Default to openshift for backward compatibility
@@ -58,6 +62,7 @@ func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotune
 		Namespace:         namespace,
 		Autotune_image:    autotuneImage,
 		Autotune_ui_image: autotuneUIImage,
+		Optimizer_image:   optimizerImage,
 		ClusterType:       clusterType,
 		KruizeSpec:        kruizeSpec,
 		Ctx:               ctx,
@@ -489,9 +494,9 @@ func (g *KruizeResourceGenerator) ClusterScopedResources() []client.Object {
 	}
 }
 
-// NamespacedResources generates all OpenShift namespaced resources for Kruize.
-// These resources will get an owner reference set to the Kruize CR.
-func (g *KruizeResourceGenerator) NamespacedResources() []client.Object {
+// CoreNamespacedResources generates core Kruize resources (DB, Kruize, UI) without optimizer.
+// Deploy these first and wait for Kruize to be ready before deploying optimizer.
+func (g *KruizeResourceGenerator) CoreNamespacedResources() []client.Object {
 	objects := []client.Object{
 		g.kruizeDBPersistentVolumeClaim(),
 		g.kruizeDBDeployment(),
@@ -508,6 +513,15 @@ func (g *KruizeResourceGenerator) NamespacedResources() []client.Object {
 
 	objects = append(objects, g.Routes()...)
 	return objects
+}
+
+// OptimizerNamespacedResources generates optimizer-specific resources.
+// Deploy these after Kruize core is ready.
+func (g *KruizeResourceGenerator) OptimizerNamespacedResources() []client.Object {
+	return []client.Object{
+		g.kruizeOptimizerDeployment(),
+		g.kruizeOptimizerService(),
+	}
 }
 
 func (g *KruizeResourceGenerator) Routes() []client.Object {
@@ -1049,6 +1063,108 @@ func (g *KruizeResourceGenerator) kruizeService() *corev1.Service {
 	}
 }
 
+// kruizeOptimizerDeployment generates the Deployment for the Kruize Optimizer.
+func (g *KruizeResourceGenerator) kruizeOptimizerDeployment() *appsv1.Deployment {
+	replicas := int32(1)
+
+	return &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kruize-optimizer",
+			Namespace: g.Namespace,
+			Labels: map[string]string{
+				"app": "kruize-optimizer",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "kruize-optimizer",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "kruize-optimizer",
+					},
+				},
+				Spec: corev1.PodSpec{
+					// Init container to wait for Kruize deployment to be ready
+					InitContainers: []corev1.Container{
+						{
+							Name:  "wait-for-kruize",
+							Image: "busybox:1.36",
+							Command: []string{
+								"sh",
+								"-c",
+								`echo "Waiting for Kruize service to be ready...";
+								until wget -q -O- --timeout=5 http://kruize:8080/health >/dev/null 2>&1 || wget -q -O- --timeout=5 http://kruize:8080 >/dev/null 2>&1; do
+								echo "Kruize service not ready yet, waiting...";
+								sleep 5;
+								done;
+								echo "Kruize service is ready!";`,
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:            "kruize-optimizer",
+							Image:           g.Optimizer_image,
+							ImagePullPolicy: corev1.PullAlways,
+							Ports: []corev1.ContainerPort{
+								{ContainerPort: 8080},
+							},
+							Env: []corev1.EnvVar{
+								{Name: "KRUIZE_URL", Value: "http://kruize:8080"},
+								{Name: "KRUIZE_STATE_REFRESH_INTERVAL", Value: "60m"},
+								{Name: "KRUIZE_BULK_SCHEDULER_INTERVAL", Value: "15m"},
+								{Name: "KRUIZE_BULK_SCHEDULER_STARTUP_DELAY", Value: "1m"},
+								{Name: "KRUIZE_BULK_MEASUREMENT_DURATION", Value: "15min"},
+								{Name: "KRUIZE_WEBHOOK_URL", Value: "http://kruize-optimizer:8080/webhook"},
+								{Name: "KRUIZE_TARGET_LABEL_LIMIT", Value: "1"},
+								{Name: "KRUIZE_TARGET_LABELS", Value: `{"kruize/autotune": "enabled"}`},
+								{Name: "KRUIZE_DEFAULT_DATASOURCE", Value: "prometheus-1"},
+								{Name: "KRUIZE_DEFAULT_METADATA_PROFILE", Value: "cluster-metadata-local-monitoring"},
+								{Name: "KRUIZE_DEFAULT_METRIC_PROFILE", Value: "resource-optimization-local-monitoring"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// kruizeOptimizerService generates the Service for the Kruize Optimizer.
+func (g *KruizeResourceGenerator) kruizeOptimizerService() *corev1.Service {
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Service",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kruize-optimizer",
+			Namespace: g.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{
+				"app": "kruize-optimizer",
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+}
 
 func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
 	replicas := int32(1)
@@ -1887,8 +2003,9 @@ func (g *KruizeResourceGenerator) KubernetesClusterScopedResources() []client.Ob
 	}
 }
 
-// KubernetesNamespacedResources returns namespaced resources for Kind/minikube/Kubernetes
-func (g *KruizeResourceGenerator) KubernetesNamespacedResources() []client.Object {
+// CoreKubernetesNamespacedResources returns core Kruize resources for Kubernetes without optimizer.
+// Deploy these first and wait for Kruize to be ready before deploying optimizer.
+func (g *KruizeResourceGenerator) CoreKubernetesNamespacedResources() []client.Object {
 	return []client.Object{
 		g.kruizeDBPersistentVolumeClaimKubernetes(),
 		g.kruizeToPrometheusNetworkPolicy(),
@@ -1902,5 +2019,14 @@ func (g *KruizeResourceGenerator) KubernetesNamespacedResources() []client.Objec
 		g.kruizeUINginxService(),
 		g.kruizeUINginxDeployment(),
 		g.deletePartitionCronJob(),
+	}
+}
+
+// OptimizerKubernetesNamespacedResources returns optimizer-specific resources for Kubernetes.
+// Deploy these after Kruize core is ready.
+func (g *KruizeResourceGenerator) OptimizerKubernetesNamespacedResources() []client.Object {
+	return []client.Object{
+		g.kruizeOptimizerDeployment(),
+		g.kruizeOptimizerService(),
 	}
 }

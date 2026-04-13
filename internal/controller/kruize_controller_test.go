@@ -460,40 +460,39 @@ var _ = Describe("Kruize Controller", func() {
 
 	Context("Resource generation", func() {
 		It("should generate cluster-scoped resources for OpenShift", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 			clusterResources := generator.ClusterScopedResources()
 			Expect(clusterResources).NotTo(BeEmpty())
 			Expect(len(clusterResources)).To(BeNumerically(">", 0))
 		})
 
 		It("should generate namespaced resources for OpenShift", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-
-			namespacedResources := generator.NamespacedResources()
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 			Expect(namespacedResources).NotTo(BeEmpty())
 			Expect(len(namespacedResources)).To(BeNumerically(">", 0))
 		})
 
 		It("should generate Kubernetes cluster-scoped resources", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 			clusterResources := generator.KubernetesClusterScopedResources()
 			Expect(clusterResources).NotTo(BeEmpty())
 			Expect(len(clusterResources)).To(BeNumerically(">", 0))
 		})
 
 		It("should generate Kubernetes namespaced resources", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-
-			namespacedResources := generator.KubernetesNamespacedResources()
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			coreResources := generator.CoreKubernetesNamespacedResources()
+			optimizerResources := generator.OptimizerKubernetesNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 			Expect(namespacedResources).NotTo(BeEmpty())
 			Expect(len(namespacedResources)).To(BeNumerically(">", 0))
 		})
 
 		It("should use default images when not specified", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 			Expect(generator.Autotune_image).To(Equal(constants.GetDefaultAutotuneImage()))
 			Expect(generator.Autotune_ui_image).To(Equal(constants.GetDefaultUIImage()))
 		})
@@ -501,7 +500,9 @@ var _ = Describe("Kruize Controller", func() {
 		It("should use custom images when specified", func() {
 			customImage := "custom/image:v1.0"
 			customUIImage := "custom/ui:v1.0"
-			generator := utils.NewKruizeResourceGenerator("test-namespace", customImage, customUIImage, constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			customOptimizerImage := "custom/optimizer:v1.0"
+
+			generator := utils.NewKruizeResourceGenerator("test-namespace", customImage, customUIImage, customOptimizerImage, constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			Expect(generator.Autotune_image).To(Equal(customImage))
 			Expect(generator.Autotune_ui_image).To(Equal(customUIImage))
@@ -524,9 +525,11 @@ var _ = Describe("Kruize Controller", func() {
 				},
 			}
 
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruize.Spec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruize.Spec, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 			Expect(namespacedResources).NotTo(BeEmpty())
 
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
@@ -554,8 +557,10 @@ var _ = Describe("Kruize Controller", func() {
 
 		It("should allow partial resource overrides while preserving defaults", func() {
 			// First, generate resources with default configuration to capture default resources
-			defaultGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-			defaultNamespacedResources := defaultGenerator.NamespacedResources()
+			defaultGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			defaultCoreResources := defaultGenerator.CoreNamespacedResources()
+			defaultOptimizerResources := defaultGenerator.OptimizerNamespacedResources()
+			defaultNamespacedResources := append(defaultCoreResources, defaultOptimizerResources...)
 
 			defaultKruizeDeployment := findDeployment(defaultNamespacedResources, "kruize")
 			defaultDBDeployment := findDeployment(defaultNamespacedResources, "kruize-db-deployment")
@@ -573,8 +578,10 @@ var _ = Describe("Kruize Controller", func() {
 				KruizeDB: createKruizeDBConfig("250m", "", "", ""),
 				Kruize:   createKruizeAppConfig("300m", "", "", ""),
 			}
-			partialGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, partialSpec, getTestContext())
-			partialNamespacedResources := partialGenerator.NamespacedResources()
+			partialGenerator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, partialSpec, getTestContext())
+			partialCoreResources := partialGenerator.CoreNamespacedResources()
+			partialOptimizerResources := partialGenerator.OptimizerNamespacedResources()
+			partialNamespacedResources := append(partialCoreResources, partialOptimizerResources...)
 
 			partialKruizeDeployment := findDeployment(partialNamespacedResources, "kruize")
 			partialDBDeployment := findDeployment(partialNamespacedResources, "kruize-db-deployment")
@@ -605,7 +612,7 @@ var _ = Describe("Kruize Controller", func() {
 
 	Context("RBAC and ConfigMap manifest generation", func() {
 		It("should generate RBAC manifests correctly for OpenShift", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			clusterResources := generator.ClusterScopedResources()
 
@@ -626,7 +633,8 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate RBAC manifests correctly for Kubernetes", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			clusterResources := generator.KubernetesClusterScopedResources()
 
@@ -647,7 +655,7 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate ConfigMap correctly for OpenShift", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			configMap := generator.KruizeConfigMap()
 			Expect(configMap).NotTo(BeNil())
@@ -657,8 +665,7 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate ConfigMap correctly for Kubernetes", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 			configMap := generator.KruizeConfigMapKubernetes()
 			Expect(configMap).NotTo(BeNil())
 			Expect(configMap.GetName()).To(Equal("kruizeconfig"))
@@ -669,7 +676,7 @@ var _ = Describe("Kruize Controller", func() {
 
 	Context("Data source configuration validation", func() {
 		It("should have valid data source configuration in ConfigMap for OpenShift", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			configMap := generator.KruizeConfigMap()
 			Expect(configMap.Data).To(HaveKey("kruizeconfigjson"))
@@ -680,7 +687,7 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should have valid data source configuration in ConfigMap for Kubernetes", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			configMap := generator.KruizeConfigMapKubernetes()
 			Expect(configMap.Data).To(HaveKey("kruizeconfigjson"))
@@ -694,7 +701,8 @@ var _ = Describe("Kruize Controller", func() {
 	Context("Kruize deployment manifest generation", func() {
 		DescribeTable("should generate valid Kruize deployment manifest with default resources",
 			func(clusterType string, resourceMethod func(*utils.KruizeResourceGenerator) []client.Object) {
-				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", clusterType, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", clusterType, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+
 				namespacedResources := resourceMethod(generator)
 
 				// Check for Deployment resources and validate default resource configuration
@@ -742,10 +750,14 @@ var _ = Describe("Kruize Controller", func() {
 				}
 			},
 			Entry("for OpenShift", constants.ClusterTypeOpenShift, func(g *utils.KruizeResourceGenerator) []client.Object {
-				return g.NamespacedResources()
+				coreResources := g.CoreNamespacedResources()
+				optimizerResources := g.OptimizerNamespacedResources()
+				return append(coreResources, optimizerResources...)
 			}),
 			Entry("for Kubernetes", constants.ClusterTypeMinikube, func(g *utils.KruizeResourceGenerator) []client.Object {
-				return g.KubernetesNamespacedResources()
+				coreResources := g.CoreKubernetesNamespacedResources()
+				optimizerResources := g.OptimizerKubernetesNamespacedResources()
+				return append(coreResources, optimizerResources...)
 			}),
 		)
 
@@ -755,7 +767,7 @@ var _ = Describe("Kruize Controller", func() {
 					Kruize:   createKruizeAppConfig("2.0", "2.5", "1Gi", "1.5Gi"),
 					KruizeDB: createKruizeDBConfig("0.75", "1.5", "512Mi", "1Gi"),
 				}
-				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", clusterType, customSpec, getTestContext())
+				generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", clusterType, customSpec, getTestContext())
 				namespacedResources := resourceMethod(generator)
 
 				// Check for Deployment resources and validate custom resource configuration
@@ -780,19 +792,25 @@ var _ = Describe("Kruize Controller", func() {
 				Expect(dbContainer.Resources.Limits.Memory().String()).To(Equal("1Gi"))
 			},
 			Entry("for OpenShift", constants.ClusterTypeOpenShift, func(g *utils.KruizeResourceGenerator) []client.Object {
-				return g.NamespacedResources()
+				coreResources := g.CoreNamespacedResources()
+				optimizerResources := g.OptimizerNamespacedResources()
+				return append(coreResources, optimizerResources...)
 			}),
 			Entry("for Kubernetes", constants.ClusterTypeMinikube, func(g *utils.KruizeResourceGenerator) []client.Object {
-				return g.KubernetesNamespacedResources()
+				coreResources := g.CoreKubernetesNamespacedResources()
+				optimizerResources := g.OptimizerKubernetesNamespacedResources()
+				return append(coreResources, optimizerResources...)
 			}),
 		)
 	})
 
 	Context("Pod creation validation", func() {
 		It("should generate Kruize pod specification", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
@@ -800,9 +818,11 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate Kruize-ui deployment specification", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 			
 			// Find the Kruize UI deployment
 			var kruizeUIDeployment *appsv1.Deployment
@@ -820,9 +840,11 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate Kruize-db pod specification", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize DB deployment
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
@@ -833,9 +855,11 @@ var _ = Describe("Kruize Controller", func() {
 			customSpec := &kruizev1alpha1.KruizeSpec{
 				Kruize: createKruizeAppConfig("1.0", "2.0", "1Gi", "2Gi"),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
@@ -854,9 +878,11 @@ var _ = Describe("Kruize Controller", func() {
 			customSpec := &kruizev1alpha1.KruizeSpec{
 				KruizeDB: createKruizeDBConfig("0.25", "1.0", "256Mi", "512Mi"),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize DB deployment
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
@@ -872,9 +898,11 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should use default resources when ResourceConfig is nil", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "",constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
@@ -893,9 +921,11 @@ var _ = Describe("Kruize Controller", func() {
 			customSpec := &kruizev1alpha1.KruizeSpec{
 				Kruize: createKruizeAppConfig("1.5", "", "", "3Gi"),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
@@ -918,9 +948,11 @@ var _ = Describe("Kruize Controller", func() {
 			customSpec := &kruizev1alpha1.KruizeSpec{
 				KruizeDB: createKruizeDBConfig("0.3", "", "", ""),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize DB deployment
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
@@ -938,9 +970,11 @@ var _ = Describe("Kruize Controller", func() {
 			customSpec := &kruizev1alpha1.KruizeSpec{
 				Kruize: createKruizeAppConfig("", "", "", "2Gi"),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
 
-			namespacedResources := generator.KubernetesNamespacedResources()
+			coreResources := generator.CoreKubernetesNamespacedResources()
+			optimizerResources := generator.OptimizerKubernetesNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize deployment
 			kruizeDeployment := findDeployment(namespacedResources, "kruize")
@@ -958,9 +992,11 @@ var _ = Describe("Kruize Controller", func() {
 			customSpec := &kruizev1alpha1.KruizeSpec{
 				KruizeDB: createKruizeDBConfig("", "1.0", "256Mi", ""),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
 
-			namespacedResources := generator.KubernetesNamespacedResources()
+			coreResources := generator.CoreKubernetesNamespacedResources()
+			optimizerResources := generator.OptimizerKubernetesNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize DB deployment
 			kruizeDBDeployment := findDeployment(namespacedResources, "kruize-db-deployment")
@@ -983,7 +1019,7 @@ var _ = Describe("Kruize Controller", func() {
 				PersistentVolume:      createPVSpec("2Gi", "custom-storage", "/custom/path", []kruizev1alpha1.PersistentVolumeAccessMode{kruizev1alpha1.ReadWriteOnce}),
 				PersistentVolumeClaim: createPVCSpec("1Gi"),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
 
 			clusterResources := generator.ClusterScopedResources()
 
@@ -1008,7 +1044,7 @@ var _ = Describe("Kruize Controller", func() {
 				PersistentVolume:      createPVSpec("3Gi", "k8s-storage", "/k8s/custom/path", []kruizev1alpha1.PersistentVolumeAccessMode{kruizev1alpha1.ReadWriteMany}),
 				PersistentVolumeClaim: createPVCSpec("2Gi"),
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
 
 			clusterResources := generator.KubernetesClusterScopedResources()
 
@@ -1033,7 +1069,7 @@ var _ = Describe("Kruize Controller", func() {
 				PersistentVolume: createPVSpec("5Gi", "fallback-storage", "/fallback/path", nil),
 				// PVC not specified, should use PV storage size
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, customSpec, getTestContext())
 
 			clusterResources := generator.ClusterScopedResources()
 
@@ -1054,7 +1090,7 @@ var _ = Describe("Kruize Controller", func() {
 				PersistentVolume: createPVSpec("4Gi", "k8s-fallback", "/k8s/fallback", nil),
 				// PVC not specified, should use PV storage size
 			}
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, customSpec, getTestContext())
 
 			clusterResources := generator.KubernetesClusterScopedResources()
 
@@ -1071,7 +1107,7 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should use default PV/PVC configuration when ResourceConfig is nil for OpenShift", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			clusterResources := generator.ClusterScopedResources()
 
@@ -1092,7 +1128,7 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should use default PV/PVC configuration when ResourceConfig is nil for Kubernetes", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeMinikube, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
 			clusterResources := generator.KubernetesClusterScopedResources()
 
@@ -1115,9 +1151,10 @@ var _ = Describe("Kruize Controller", func() {
 
 	Context("Route and service creation", func() {
 		It("should generate routes for OpenShift", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
-
-			namespacedResources := generator.NamespacedResources()
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Check for Route resources
 			var hasKruizeRoute, hasUIRoute bool
@@ -1138,9 +1175,11 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate services for all cluster types", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Check for Service resources
 			var hasKruizeService, hasDBService, hasUIService bool
@@ -1167,9 +1206,11 @@ var _ = Describe("Kruize Controller", func() {
 
 	Context("Kruize endpoints validation", func() {
 		It("should generate service with correct ports for Kruize", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize service
 			kruizeService := findTypedResource[*corev1.Service](namespacedResources, "kruize", "", "")
@@ -1188,9 +1229,12 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate service with correct ports for Kruize UI", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize UI service
 			kruizeUIService := findTypedResource[*corev1.Service](namespacedResources, "kruize-ui-nginx-service", "", "")
@@ -1209,9 +1253,12 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate service with correct ports for Kruize DB", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize DB service
 			kruizeDBService := findTypedResource[*corev1.Service](namespacedResources, "kruize-db-service", "", "")
@@ -1230,9 +1277,11 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate Kruize service with NodePort type", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize service
 			kruizeService := findTypedResource[*corev1.Service](namespacedResources, "kruize", "", "")
@@ -1241,9 +1290,11 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate Kruize UI service with NodePort type", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize UI service
 			kruizeUIService := findTypedResource[*corev1.Service](namespacedResources, "kruize-ui-nginx-service", "", "")
@@ -1252,9 +1303,11 @@ var _ = Describe("Kruize Controller", func() {
 		})
 
 		It("should generate Kruize DB service with ClusterIP type", func() {
-			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+			generator := utils.NewKruizeResourceGenerator("test-namespace", "", "", "", constants.ClusterTypeOpenShift, &kruizev1alpha1.KruizeSpec{}, getTestContext())
 
-			namespacedResources := generator.NamespacedResources()
+			coreResources := generator.CoreNamespacedResources()
+			optimizerResources := generator.OptimizerNamespacedResources()
+			namespacedResources := append(coreResources, optimizerResources...)
 
 			// Find the Kruize DB service
 			kruizeDBService := findTypedResource[*corev1.Service](namespacedResources, "kruize-db-service", "", "")
@@ -1269,7 +1322,8 @@ var _ = Describe("Kruize Controller", func() {
     		clusterType := constants.ClusterTypeMinikube
 
     		By("creating a generator with empty image fields")
-    		generator := utils.NewKruizeResourceGenerator(namespace, "", "", clusterType, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+    		generator := utils.NewKruizeResourceGenerator(namespace, "", "", "", clusterType, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+
 
     		By("verifying the generator uses the default-image helpers")
     		// This test verifies that the generator is wired to use the default-image helpers
@@ -1279,7 +1333,9 @@ var _ = Describe("Kruize Controller", func() {
     			"Generator should default Autotune_ui_image when empty")
 
     		By("verifying the generated resources use default images")
-    		namespacedResources := generator.KubernetesNamespacedResources()
+    		coreResources := generator.CoreKubernetesNamespacedResources()
+    		optimizerResources := generator.OptimizerKubernetesNamespacedResources()
+    		namespacedResources := append(coreResources, optimizerResources...)
 
     		// Find and verify Kruize deployment using helper
     		kruizeDeployment := findTypedResource[*appsv1.Deployment](namespacedResources, "kruize", "app", "kruize")
@@ -1309,9 +1365,11 @@ var _ = Describe("Kruize Controller", func() {
     		clusterType := constants.ClusterTypeMinikube
     		customAutotuneImage := "custom.registry/autotune:custom-tag"
     		customUIImage := "custom.registry/ui:custom-tag"
+			customOptimizerImage := "custom.registry/optimizer:custom-tag"
 
     		By("creating a generator with custom image values")
-    		generator := utils.NewKruizeResourceGenerator(namespace, customAutotuneImage, customUIImage, clusterType, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+    		generator := utils.NewKruizeResourceGenerator(namespace, customAutotuneImage, customUIImage, customOptimizerImage, clusterType, &kruizev1alpha1.KruizeSpec{}, getTestContext())
+
 
     		By("verifying the generator uses the provided custom images")
     		Expect(generator.Autotune_image).To(Equal(customAutotuneImage),
@@ -1466,3 +1524,4 @@ var _ = Describe("Kruize Controller", func() {
         })
     })
 })
+
