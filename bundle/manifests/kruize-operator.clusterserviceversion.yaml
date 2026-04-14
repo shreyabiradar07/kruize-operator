@@ -15,23 +15,94 @@ metadata:
             "name": "kruize-sample"
           },
           "spec": {
-            "autotune_image": "quay.io/kruize/autotune_operator:0.8.1",
-            "autotune_ui_image": "quay.io/kruize/kruize-ui:0.0.9",
+            "autotune_image": "quay.io/kruize/autotune_operator:0.9",
+            "autotune_ui_image": "quay.io/kruize/kruize-ui:0.1.0",
             "cluster_type": "openshift",
-            "namespace": "openshift-tuning"
+            "kruize": {
+              "resources": {
+                "limits": {
+                  "cpu": "0.7",
+                  "memory": "768Mi"
+                },
+                "requests": {
+                  "cpu": "0.7",
+                  "memory": "768Mi"
+                }
+              }
+            },
+            "kruize-db": {
+              "resources": {
+                "limits": {
+                  "cpu": "0.5",
+                  "memory": "100Mi"
+                },
+                "requests": {
+                  "cpu": "0.5",
+                  "memory": "100Mi"
+                }
+              },
+              "volumeMounts": [
+                {
+                  "mountPath": "/var/lib/pgsql/data",
+                  "name": "kruize-db-storage"
+                }
+              ],
+              "volumes": [
+                {
+                  "name": "kruize-db-storage",
+                  "persistentVolumeClaim": {
+                    "claimName": "kruize-db-pv-claim"
+                  }
+                }
+              ]
+            },
+            "namespace": "openshift-tuning",
+            "optimizer_image": "quay.io/kruize/kruize-optimizer:0.0.1",
+            "persistentVolume": {
+              "accessModes": [
+                "ReadWriteMany"
+              ],
+              "capacity": {
+                "storage": "500Mi"
+              },
+              "hostPath": {
+                "path": "/mnt/data"
+              },
+              "labels": {
+                "app": "kruize-db",
+                "type": "local"
+              },
+              "name": "kruize-db-pv-volume",
+              "storageClassName": "manual"
+            },
+            "persistentVolumeClaim": {
+              "accessModes": [
+                "ReadWriteMany"
+              ],
+              "labels": {
+                "app": "kruize-db"
+              },
+              "name": "kruize-db-pv-claim",
+              "resources": {
+                "requests": {
+                  "storage": "500Mi"
+                }
+              },
+              "storageClassName": "manual"
+            }
           }
         }
       ]
     capabilities: Basic Install
     categories: Monitoring, Developer Tools
-    containerImage: quay.io/kruize/kruize-operator:0.0.4
-    createdAt: "2026-02-04T08:25:45Z"
+    containerImage: quay.io/kruize/kruize-operator:0.0.5
+    createdAt: "2026-04-14T10:36:45Z"
     description: Resource optimization tool for Kubernetes workloads
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/kruize/kruize-operator
     support: Kruize Community
-  name: kruize-operator.v0.0.4
+  name: kruize-operator.v0.0.5
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -86,6 +157,11 @@ spec:
       - description: Target namespace for Kruize deployment
         displayName: Namespace
         path: namespace
+        x-descriptors:
+        - urn:alm:descriptor:com.tectonic.ui:text
+      - description: Container image for Kruize Optimizer
+        displayName: Optimizer Image
+        path: optimizer_image
         x-descriptors:
         - urn:alm:descriptor:com.tectonic.ui:text
       version: v1alpha1
@@ -270,6 +346,18 @@ spec:
           - get
           - list
           - watch
+        - apiGroups:
+          - authentication.k8s.io
+          resources:
+          - tokenreviews
+          verbs:
+          - create
+        - apiGroups:
+          - authorization.k8s.io
+          resources:
+          - subjectaccessreviews
+          verbs:
+          - create
         - apiGroups:
           - autoscaling.k8s.io
           resources:
@@ -492,30 +580,10 @@ spec:
           - get
           - list
           - watch
-        - apiGroups:
-          - autoscaling
-          resources:
-          - horizontalpodautoscalers
-          verbs:
-          - get
-          - list
-          - watch
         - nonResourceURLs:
           - /metrics
           verbs:
           - get
-        - apiGroups:
-          - authentication.k8s.io
-          resources:
-          - tokenreviews
-          verbs:
-          - create
-        - apiGroups:
-          - authorization.k8s.io
-          resources:
-          - subjectaccessreviews
-          verbs:
-          - create
         serviceAccountName: kruize-operator-controller-manager
       deployments:
       - label:
@@ -538,35 +606,12 @@ spec:
             spec:
               containers:
               - args:
-                - --secure-listen-address=0.0.0.0:8443
-                - --upstream=http://127.0.0.1:8080/
-                - --logtostderr=true
-                - --v=0
-                image: gcr.io/kubebuilder/kube-rbac-proxy:v0.16.0
-                name: kube-rbac-proxy
-                ports:
-                - containerPort: 8443
-                  name: https
-                  protocol: TCP
-                resources:
-                  limits:
-                    cpu: 500m
-                    memory: 128Mi
-                  requests:
-                    cpu: 5m
-                    memory: 64Mi
-                securityContext:
-                  allowPrivilegeEscalation: false
-                  capabilities:
-                    drop:
-                    - ALL
-              - args:
-                - --health-probe-bind-address=:8081
-                - --metrics-bind-address=127.0.0.1:8080
                 - --leader-elect
+                - --health-probe-bind-address=:8081
+                - --metrics-bind-address=:8443
                 command:
                 - /app/manager
-                image: quay.io/kruize/kruize-operator:0.0.4
+                image: quay.io/kruize/kruize-operator:0.0.5
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -574,6 +619,13 @@ spec:
                   initialDelaySeconds: 15
                   periodSeconds: 20
                 name: manager
+                ports:
+                - containerPort: 8443
+                  name: metrics
+                  protocol: TCP
+                - containerPort: 8081
+                  name: health-probe
+                  protocol: TCP
                 readinessProbe:
                   httpGet:
                     path: /readyz
@@ -663,4 +715,4 @@ spec:
   minKubeVersion: 1.23.0
   provider:
     name: Kruize
-  version: 0.0.4
+  version: 0.0.5
