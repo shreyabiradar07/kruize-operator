@@ -294,17 +294,23 @@ endif
 
 .PHONY: operator-sdk
 operator-sdk: ## Download operator-sdk locally if necessary.
-	@if [ "$(OPERATOR_SDK)" = "$(LOCALBIN)/operator-sdk" ] && [ ! -f $(OPERATOR_SDK) ]; then \
-		echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)..." ;\
-		mkdir -p $(LOCALBIN) ;\
-		OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
-		case $$ARCH in \
-			x86_64) ARCH=amd64 ;; \
-			aarch64) ARCH=arm64 ;; \
-		esac ;\
-		curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
-		chmod +x $(OPERATOR_SDK) ;\
-		echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
+	@if [ ! -f $(OPERATOR_SDK) ]; then \
+		if [ "$(OPERATOR_SDK)" = "$(LOCALBIN)/operator-sdk" ]; then \
+			echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)..." ;\
+			mkdir -p $(LOCALBIN) ;\
+			OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
+			case $$ARCH in \
+				x86_64) ARCH=amd64 ;; \
+				aarch64) ARCH=arm64 ;; \
+			esac ;\
+			curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+			chmod +x $(OPERATOR_SDK) ;\
+			echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
+		else \
+			echo "Error: Custom OPERATOR_SDK path '$(OPERATOR_SDK)' does not exist." ;\
+			echo "Please ensure the binary exists at the specified path or use the default location." ;\
+			exit 1 ;\
+		fi ;\
 	else \
 		echo "Using operator-sdk: $(OPERATOR_SDK)" ;\
 	fi
