@@ -10,6 +10,7 @@ rules:
   - configmaps
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -50,6 +51,7 @@ rules:
   - persistentvolumeclaims
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -59,6 +61,7 @@ rules:
   - persistentvolumes
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -68,6 +71,7 @@ rules:
   - pods
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -77,6 +81,7 @@ rules:
   - secrets
   verbs:
   - create
+  - delete
   - get
 - apiGroups:
   - ""
@@ -84,6 +89,7 @@ rules:
   - serviceaccounts
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -93,6 +99,7 @@ rules:
   - services
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -110,6 +117,7 @@ rules:
   - daemonsets
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -119,6 +127,7 @@ rules:
   - deployments
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -128,6 +137,7 @@ rules:
   - statefulsets
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -182,6 +192,7 @@ rules:
   - cronjobs
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -215,6 +226,8 @@ rules:
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - kruize.io
@@ -276,6 +289,7 @@ rules:
   - servicemonitors
   verbs:
   - create
+  - delete
   - get
   - list
   - patch
@@ -295,6 +309,7 @@ rules:
   - networkpolicies
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -304,6 +319,7 @@ rules:
   - clusterrolebindings
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -313,6 +329,7 @@ rules:
   - clusterroles
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -322,6 +339,7 @@ rules:
   - rolebindings
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -331,6 +349,7 @@ rules:
   - roles
   verbs:
   - create
+  - delete
   - get
 - apiGroups:
   - route.openshift.io
@@ -338,6 +357,7 @@ rules:
   - routes
   verbs:
   - create
+  - delete
   - get
   - list
   - watch
@@ -353,6 +373,7 @@ rules:
   - storageclasses
   verbs:
   - create
+  - delete
   - get
   - list
   - watch

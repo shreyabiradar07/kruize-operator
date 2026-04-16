@@ -54,39 +54,39 @@ type KruizeReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=kruize.io,resources=kruizes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=kruize.io,resources=kruizes,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=kruize.io,resources=kruizes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kruize.io,resources=kruizes/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;delete
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;create
-//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;create;delete
+//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=inference.redhat.com,resources=instaslices,verbs=get;list;watch
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;create
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;create;list;watch
-//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;create;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;create;list;watch;delete
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch
-//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use
 //+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
-//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;create
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create
-//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;create;delete
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses/api,verbs=get;create;update
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=alertmanagers,verbs=get;list;watch
@@ -126,7 +126,7 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// Check if the Kruize instance is marked for deletion
 	if kruize.GetDeletionTimestamp() != nil {
-		if controllerutil.ContainsFinalizer(kruize, kruizeFinalizer) {
+		if controllerutil.ContainsFinalizer(kruize, kruizev1alpha1.KruizeFinalizer) {
 			// Run finalization logic
 			if err := r.finalizeKruize(ctx, kruize); err != nil {
 				logger.Error(err, "Failed to finalize Kruize")
@@ -134,7 +134,7 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 
 			// Remove finalizer to allow deletion
-			controllerutil.RemoveFinalizer(kruize, kruizeFinalizer)
+			controllerutil.RemoveFinalizer(kruize, kruizev1alpha1.KruizeFinalizer)
 			if err := r.Update(ctx, kruize); err != nil {
 				logger.Error(err, "Failed to remove finalizer")
 				return ctrl.Result{}, err
@@ -144,8 +144,8 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Add finalizer if it doesn't exist
-	if !controllerutil.ContainsFinalizer(kruize, kruizeFinalizer) {
-		controllerutil.AddFinalizer(kruize, kruizeFinalizer)
+	if !controllerutil.ContainsFinalizer(kruize, kruizev1alpha1.KruizeFinalizer) {
+		controllerutil.AddFinalizer(kruize, kruizev1alpha1.KruizeFinalizer)
 		if err := r.Update(ctx, kruize); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
@@ -192,6 +192,8 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 		kruize.Spec.Autotune_image,
 		kruize.Spec.Autotune_ui_image,
 		clusterType,
+		&kruize.Spec,
+		ctx,
 	)
 
 	// Delete namespace-scoped resources first
