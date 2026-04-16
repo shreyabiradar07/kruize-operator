@@ -191,13 +191,19 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 		kruize.Spec.Namespace,
 		kruize.Spec.Autotune_image,
 		kruize.Spec.Autotune_ui_image,
+		kruize.Spec.Optimizer_image,
 		clusterType,
 		&kruize.Spec,
 		ctx,
 	)
 
 	// Delete namespace-scoped resources first
-	namespacedResources := k8sObjectGenerator.NamespacedResources()
+	coreResources := k8sObjectGenerator.CoreNamespacedResources()
+	optimizerResources := k8sObjectGenerator.OptimizerNamespacedResources()
+	
+	// Combine all namespace-scoped resources
+	namespacedResources := append(coreResources, optimizerResources...)
+	
 	logger.Info("Deleting namespace-scoped resources", "count", len(namespacedResources))
 	for _, obj := range namespacedResources {
 		if err := r.deleteResource(ctx, obj); err != nil {
