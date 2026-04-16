@@ -1032,7 +1032,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(generator.NamespacedResources())
+			pvc := findPersistentVolumeClaim(generator.CoreNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("custom-storage"))
@@ -1057,7 +1057,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(generator.KubernetesNamespacedResources())
+			pvc := findPersistentVolumeClaim(generator.CoreKubernetesNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("2Gi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("k8s-storage"))
@@ -1079,7 +1079,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("5Gi"))
 
 			// Find the PVC and verify it uses PVStorageSize
-			pvc := findPersistentVolumeClaim(generator.NamespacedResources())
+			pvc := findPersistentVolumeClaim(generator.CoreNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			// PVC should use PVStorageSize since PVCStorageSize was not specified
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("5Gi"))
@@ -1100,7 +1100,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.Capacity.Storage().String()).To(Equal("4Gi"))
 
 			// Find the PVC and verify it uses PVStorageSize
-			pvc := findPersistentVolumeClaim(generator.KubernetesNamespacedResources())
+			pvc := findPersistentVolumeClaim(generator.CoreKubernetesNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			// PVC should use PVStorageSize since PVCStorageSize was not specified
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("4Gi"))
@@ -1120,7 +1120,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(generator.NamespacedResources())
+			pvc := findPersistentVolumeClaim(generator.CoreNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("500Mi"))
 			Expect(*pvc.Spec.StorageClassName).To(Equal("manual"))
@@ -1141,7 +1141,7 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(pv.Spec.AccessModes).To(Equal([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}))
 
 			// Find the PVC
-			pvc := findPersistentVolumeClaim(generator.KubernetesNamespacedResources())
+			pvc := findPersistentVolumeClaim(generator.CoreKubernetesNamespacedResources())
 			Expect(pvc).NotTo(BeNil(), "PersistentVolumeClaim should exist")
 			Expect(pvc.Spec.Resources.Requests.Storage().String()).To(Equal("1Gi"))
 			Expect(pvc.Spec.StorageClassName).To(BeNil())
