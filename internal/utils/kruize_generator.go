@@ -1127,7 +1127,12 @@ func (g *KruizeResourceGenerator) kruizeOptimizerDeployment() *appsv1.Deployment
 								{Name: "KRUIZE_WEBHOOK_URL", Value: "http://kruize-optimizer:8080/webhook"},
 								{Name: "KRUIZE_TARGET_LABEL_LIMIT", Value: "1"},
 								{Name: "KRUIZE_TARGET_LABELS", Value: `{"kruize/autotune": "enabled"}`},
-								{Name: "KRUIZE_DEFAULT_DATASOURCE", Value: "prometheus-1"},
+								{Name: "KRUIZE_DEFAULT_DATASOURCE", Value: func() string {
+									if g.ClusterType == constants.ClusterTypeOpenShift {
+										return "thanos-1"
+									}
+									return "prometheus-1"
+								}()},
 								{Name: "KRUIZE_DEFAULT_METADATA_PROFILE", Value: "cluster-metadata-local-monitoring"},
 								{Name: "KRUIZE_DEFAULT_METRIC_PROFILE", Value: "resource-optimization-local-monitoring"},
 							},
