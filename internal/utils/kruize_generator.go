@@ -1063,6 +1063,23 @@ func (g *KruizeResourceGenerator) kruizeService() *corev1.Service {
 	}
 }
 
+// getDefaultDatasource returns the default datasource based on cluster type.
+// OpenShift uses thanos-1, while other cluster types (minikube, kind) use prometheus-1.
+func (g *KruizeResourceGenerator) getDefaultDatasourceForOptimizer() string {
+	switch g.ClusterType {
+	case constants.ClusterTypeOpenShift:
+		return "thanos-1"
+	case constants.ClusterTypeMinikube, constants.ClusterTypeKind:
+		return "prometheus-1"
+	default:
+		// Log warning for unknown cluster type and fall back to prometheus-1
+		logger := log.FromContext(g.Ctx)
+		logger.Info("Unknown cluster type, defaulting to prometheus-1 datasource",
+			"clusterType", g.ClusterType)
+		return "prometheus-1"
+	}
+}
+
 // kruizeOptimizerDeployment generates the Deployment for the Kruize Optimizer.
 func (g *KruizeResourceGenerator) kruizeOptimizerDeployment() *appsv1.Deployment {
 	replicas := int32(1)
@@ -1127,12 +1144,7 @@ func (g *KruizeResourceGenerator) kruizeOptimizerDeployment() *appsv1.Deployment
 								{Name: "KRUIZE_WEBHOOK_URL", Value: "http://kruize-optimizer:8080/webhook"},
 								{Name: "KRUIZE_TARGET_LABEL_LIMIT", Value: "1"},
 								{Name: "KRUIZE_TARGET_LABELS", Value: `{"kruize/autotune": "enabled"}`},
-								{Name: "KRUIZE_DEFAULT_DATASOURCE", Value: func() string {
-									if g.ClusterType == constants.ClusterTypeOpenShift {
-										return "thanos-1"
-									}
-									return "prometheus-1"
-								}()},
+								{Name: "KRUIZE_DEFAULT_DATASOURCE", Value: g.getDefaultDatasourceForOptimizer()},
 								{Name: "KRUIZE_DEFAULT_METADATA_PROFILE", Value: "cluster-metadata-local-monitoring"},
 								{Name: "KRUIZE_DEFAULT_METRIC_PROFILE", Value: "resource-optimization-local-monitoring"},
 							},
