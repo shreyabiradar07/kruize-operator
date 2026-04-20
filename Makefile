@@ -217,7 +217,16 @@ deploy-kind: ## Deploy operator to Kind cluster in monitoring namespace.
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion. Use OVERLAY=openshift or OVERLAY=local (default: openshift).
-	$(KUSTOMIZE) build config/overlays/${OVERLAY} | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
+	@echo "Deleting Kruize CR instances (if any) before undeploying operator..."
+	@if [ "${OVERLAY}" = "local" ]; then \
+		NAMESPACE="monitoring"; \
+	else \
+		NAMESPACE="openshift-tuning"; \
+	fi; \
+	echo "Deleting from namespace: $$NAMESPACE"; \
+	$(KUBECTL) delete kruizes.kruize.io --all -n $$NAMESPACE --ignore-not-found=true --timeout=60s || true
+	@echo "Undeploying operator resources..."
+	- $(KUSTOMIZE) build config/overlays/${OVERLAY} | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: undeploy-openshift
 undeploy-openshift: ## Undeploy controller from OpenShift cluster in openshift-tuning namespace.
