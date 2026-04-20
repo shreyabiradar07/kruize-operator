@@ -197,6 +197,9 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 		ctx,
 	)
 
+	// Collect all errors during cleanup
+	var errs []error
+
 	// Delete namespace-scoped resources first
 	coreResources := k8sObjectGenerator.CoreNamespacedResources()
 	optimizerResources := k8sObjectGenerator.OptimizerNamespacedResources()
@@ -211,7 +214,8 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 				"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
 				"Name", obj.GetName(),
 				"Namespace", obj.GetNamespace())
-			// Continue with other resources even if one fails
+			errs = append(errs, fmt.Errorf("failed to delete %s/%s in namespace %s: %w",
+				obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), obj.GetNamespace(), err))
 		}
 	}
 
@@ -230,8 +234,14 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 			logger.Error(err, "Failed to delete cluster-scoped resource",
 				"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
 				"Name", obj.GetName())
-			// Continue with other resources even if one fails
+			errs = append(errs, fmt.Errorf("failed to delete %s/%s: %w",
+				obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err))
 		}
+	}
+
+	// If any errors occurred during cleanup, return them to prevent finalizer removal
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to finalize Kruize (cleanup will be retried): %v", errs)
 	}
 
 	logger.Info("Successfully cleaned up all resources")
