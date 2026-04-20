@@ -200,9 +200,17 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 	// Collect all errors during cleanup
 	var errs []error
 
-	// Delete namespace-scoped resources first
-	coreResources := k8sObjectGenerator.CoreNamespacedResources()
-	optimizerResources := k8sObjectGenerator.OptimizerNamespacedResources()
+	// Delete namespace-scoped resources first based on cluster type
+	var coreResources []client.Object
+	var optimizerResources []client.Object
+	
+	if clusterType == constants.ClusterTypeOpenShift {
+		coreResources = k8sObjectGenerator.CoreNamespacedResources()
+		optimizerResources = k8sObjectGenerator.OptimizerNamespacedResources()
+	} else {
+		coreResources = k8sObjectGenerator.CoreKubernetesNamespacedResources()
+		optimizerResources = k8sObjectGenerator.OptimizerKubernetesNamespacedResources()
+	}
 	
 	// Combine all namespace-scoped resources
 	namespacedResources := append(coreResources, optimizerResources...)
