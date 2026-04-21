@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"os"
 	"path"
@@ -43,6 +44,7 @@ import (
 	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 
 	"github.com/kruize/kruize-operator/internal/constants"
+	"github.com/kruize/kruize-operator/internal/controller/common"
 	"github.com/kruize/kruize-operator/internal/utils"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -58,35 +60,35 @@ type KruizeReconciler struct {
 //+kubebuilder:rbac:groups=kruize.io,resources=kruizes/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=kruize.io,resources=kruizes/finalizers,verbs=update
 //+kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;delete
+// Namespace-scoped resources: create only (deletion handled by OwnerReferences)
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups="",resources=persistentvolumeclaims,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;create
 //+kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;create;delete
-//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;delete
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;create
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create
+//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create
+// Cluster-scoped resources: delete required (cannot use OwnerReferences)
+//+kubebuilder:rbac:groups="",resources=persistentvolumes,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=inference.redhat.com,resources=instaslices,verbs=get;list;watch
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;create;delete
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=storage.k8s.io,resources=storageclasses,verbs=get;create;list;watch;delete
-//+kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// Read-only permissions
+//+kubebuilder:rbac:groups=inference.redhat.com,resources=instaslices,verbs=get;list;watch
 //+kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch
-//+kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=security.openshift.io,resources=securitycontextconstraints,verbs=use
 //+kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
-//+kubebuilder:rbac:groups=route.openshift.io,resources=routes,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;create;delete
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;delete
-//+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses,verbs=get;list;watch
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheuses/api,verbs=get;create;update
 //+kubebuilder:rbac:groups=monitoring.coreos.com,resources=alertmanagers,verbs=get;list;watch
@@ -124,32 +126,38 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	fmt.Println("kruize object base: ", kruize.Spec)
 
-	// Check if the Kruize instance is marked for deletion
-	if kruize.GetDeletionTimestamp() != nil {
-		if controllerutil.ContainsFinalizer(kruize, kruizev1alpha1.KruizeFinalizer) {
-			// Run finalization logic
-			if err := r.finalizeKruize(ctx, kruize); err != nil {
-				logger.Error(err, "Failed to finalize Kruize")
-				return ctrl.Result{}, err
-			}
-
-			// Remove finalizer to allow deletion
-			controllerutil.RemoveFinalizer(kruize, kruizev1alpha1.KruizeFinalizer)
-			if err := r.Update(ctx, kruize); err != nil {
-				logger.Error(err, "Failed to remove finalizer")
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{}, nil
-	}
-
-	// Add finalizer if it doesn't exist
-	if !controllerutil.ContainsFinalizer(kruize, kruizev1alpha1.KruizeFinalizer) {
-		controllerutil.AddFinalizer(kruize, kruizev1alpha1.KruizeFinalizer)
-		if err := r.Update(ctx, kruize); err != nil {
-			logger.Error(err, "Failed to add finalizer")
+	// Validate cluster type early, before adding finalizer
+	// This ensures invalid configurations are rejected immediately
+	if !common.IsBeingDeleted(kruize) {
+		cluster_type := kruize.Spec.Cluster_type
+		if !constants.IsValidClusterType(cluster_type) {
+			err := fmt.Errorf("unsupported cluster type: %s. Supported types are: %s",
+				cluster_type, strings.Join(constants.SupportedClusterTypes, ", "))
+			logger.Error(err, "Invalid cluster type specified")
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Handle finalizer lifecycle using the common utility
+	needsRequeue, err := common.HandleFinalizer(ctx, r.Client, kruize, kruizev1alpha1.KruizeFinalizer,
+		func(ctx context.Context) error {
+			return r.finalizeKruize(ctx, kruize)
+		})
+	
+	if err != nil {
+		logger.Error(err, "Failed to handle finalizer")
+		return ctrl.Result{}, err
+	}
+	
+	if needsRequeue {
+		// Finalizer was just added, requeue to ensure it's persisted
+		logger.Info("Finalizer added, requeuing")
+		return ctrl.Result{Requeue: true}, nil
+	}
+	
+	// If object is being deleted, HandleFinalizer has already handled it
+	if common.IsBeingDeleted(kruize) {
+		return ctrl.Result{}, nil
 	}
 
 	// Call your deployment function with proper error handling
@@ -178,11 +186,17 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1alpha1.Kruize) error {
 	logger := log.FromContext(ctx)
 
-	logger.Info("Finalizing Kruize, cleaning up all resources", "namespace", kruize.Spec.Namespace)
+	logger.Info("Starting Kruize finalization",
+		"namespace", kruize.Spec.Namespace,
+		"name", kruize.Name,
+		"clusterType", kruize.Spec.Cluster_type)
 
 	// Get the cluster type to determine which resources to clean up
 	clusterType := kruize.Spec.Cluster_type
 	if !constants.IsValidClusterType(clusterType) {
+		logger.Info("Invalid cluster type, defaulting to OpenShift",
+			"providedType", clusterType,
+			"defaultType", constants.ClusterTypeOpenShift)
 		clusterType = constants.ClusterTypeOpenShift // Default to openshift
 	}
 
@@ -199,33 +213,15 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 
 	// Collect all errors during cleanup
 	var errs []error
+	var successCount, failCount int
 
-	// Delete namespace-scoped resources first based on cluster type
-	var coreResources []client.Object
-	var optimizerResources []client.Object
+	// IMPORTANT: Namespace-scoped resources have OwnerReferences set during creation
+	// (see reconcileNamespacedResource function). Kubernetes will automatically delete
+	// these resources via garbage collection when the Kruize CR is deleted.
+	// We only need to explicitly delete cluster-scoped resources, which cannot have
+	// OwnerReferences due to Kubernetes limitations.
 	
-	if clusterType == constants.ClusterTypeOpenShift {
-		coreResources = k8sObjectGenerator.CoreNamespacedResources()
-		optimizerResources = k8sObjectGenerator.OptimizerNamespacedResources()
-	} else {
-		coreResources = k8sObjectGenerator.CoreKubernetesNamespacedResources()
-		optimizerResources = k8sObjectGenerator.OptimizerKubernetesNamespacedResources()
-	}
-	
-	// Combine all namespace-scoped resources
-	namespacedResources := append(coreResources, optimizerResources...)
-	
-	logger.Info("Deleting namespace-scoped resources", "count", len(namespacedResources))
-	for _, obj := range namespacedResources {
-		if err := r.deleteResource(ctx, obj); err != nil {
-			logger.Error(err, "Failed to delete namespace-scoped resource",
-				"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
-				"Name", obj.GetName(),
-				"Namespace", obj.GetNamespace())
-			errs = append(errs, fmt.Errorf("failed to delete %s/%s in namespace %s: %w",
-				obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), obj.GetNamespace(), err))
-		}
-	}
+	logger.Info("Namespace-scoped resources will be automatically deleted by Kubernetes garbage collection via OwnerReferences")
 
 	// List of cluster-scoped resources to delete
 	var clusterScopedResources []client.Object
@@ -235,8 +231,9 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 		clusterScopedResources = k8sObjectGenerator.KubernetesClusterScopedResources()
 	}
 
-	// Delete each cluster-scoped resource
+	// Delete each cluster-scoped resource (these cannot have OwnerReferences)
 	logger.Info("Deleting cluster-scoped resources", "count", len(clusterScopedResources))
+	
 	for _, obj := range clusterScopedResources {
 		if err := r.deleteResource(ctx, obj); err != nil {
 			logger.Error(err, "Failed to delete cluster-scoped resource",
@@ -244,15 +241,29 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 				"Name", obj.GetName())
 			errs = append(errs, fmt.Errorf("failed to delete %s/%s: %w",
 				obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName(), err))
+			failCount++
+		} else {
+			successCount++
 		}
 	}
 
+	logger.Info("Cluster-scoped resource deletion complete",
+		"successful", successCount,
+		"failed", failCount)
+
 	// If any errors occurred during cleanup, return them to prevent finalizer removal
 	if len(errs) > 0 {
-		return fmt.Errorf("failed to finalize Kruize (cleanup will be retried): %v", errs)
+		joinedErr := stderrors.Join(errs...)
+		logger.Error(joinedErr,
+			"Finalization incomplete, will retry",
+			"totalErrors", len(errs),
+			"namespace", kruize.Spec.Namespace)
+		return fmt.Errorf("failed to finalize Kruize (cleanup will be retried): %w", joinedErr)
 	}
 
-	logger.Info("Successfully cleaned up all resources")
+	logger.Info("Successfully completed Kruize finalization",
+		"namespace", kruize.Spec.Namespace,
+		"name", kruize.Name)
 	return nil
 }
 
