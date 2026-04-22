@@ -1,9 +1,9 @@
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
-# - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.4)
-# - use environment variables to overwrite this value (e.g export VERSION=0.0.4)
-VERSION ?= 0.0.4
+# - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.5)
+# - use environment variables to overwrite this value (e.g export VERSION=0.0.5)
+VERSION ?= 0.0.5
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -285,13 +285,19 @@ mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
 }
 endef
 
-.PHONY: operator-sdk
+# Check if operator-sdk exists system-wide first, otherwise use local bin
+ifeq (,$(shell which operator-sdk 2>/dev/null))
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
-operator-sdk: $(LOCALBIN) ## Download operator-sdk locally if necessary.
+else
+OPERATOR_SDK ?= $(shell which operator-sdk)
+endif
+
+.PHONY: operator-sdk
+operator-sdk: ## Download operator-sdk locally if necessary.
 	@if [ ! -f $(OPERATOR_SDK) ]; then \
-		if ! command -v operator-sdk >/dev/null 2>&1; then \
+		if [ "$(OPERATOR_SDK)" = "$(LOCALBIN)/operator-sdk" ]; then \
 			echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)..." ;\
-			mkdir -p $(dir $(OPERATOR_SDK)) ;\
+			mkdir -p $(LOCALBIN) ;\
 			OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
 			case $$ARCH in \
 				x86_64) ARCH=amd64 ;; \
@@ -301,10 +307,12 @@ operator-sdk: $(LOCALBIN) ## Download operator-sdk locally if necessary.
 			chmod +x $(OPERATOR_SDK) ;\
 			echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
 		else \
-			echo "Using system operator-sdk: $$(which operator-sdk)" ;\
-		fi \
+			echo "Error: Custom OPERATOR_SDK path '$(OPERATOR_SDK)' does not exist." ;\
+			echo "Please ensure the binary exists at the specified path or use the default location." ;\
+			exit 1 ;\
+		fi ;\
 	else \
-		echo "operator-sdk already exists at $(OPERATOR_SDK)" ;\
+		echo "Using operator-sdk: $(OPERATOR_SDK)" ;\
 	fi
 
 .PHONY: bundle
