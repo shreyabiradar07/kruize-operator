@@ -97,6 +97,8 @@ type KruizeReconciler struct {
 //+kubebuilder:rbac:groups=autoscaling.k8s.io,resources=verticalpodautoscalers,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=autoscaling.k8s.io,resources=verticalpodautoscalers/status,verbs=get;list;watch;create;update;patch
 //+kubebuilder:rbac:groups=autoscaling.k8s.io,resources=verticalpodautoscalercheckpoints,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
+//+kubebuilder:rbac:groups=authorization.k8s.io,resources=subjectaccessreviews,verbs=create
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -159,7 +161,7 @@ func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace stri
 		return nil
 	}
 
-	requiredPods := []string{"kruize", "kruize-ui-nginx", "kruize-db"}
+	requiredPods := []string{"kruize", "kruize-ui-nginx", "kruize-db", "kruize-optimizer"}
 	logger.Info("Waiting for Kruize pods to be ready", "namespace", namespace, "pods", requiredPods)
 
 	timeoutCh := time.After(timeout)
@@ -181,8 +183,8 @@ func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace stri
 			logger.Info("Pod status check", "ready", readyPods, "total", totalPods, "namespace", namespace)
 			fmt.Printf("Pod status: %v\n", podStatus)
 
-			// Check if we have all required pods running
-			if readyPods >= 3 && totalPods >= 3 {
+			// Check if we have all required pods running (kruize, kruize-ui-nginx, kruize-db, kruize-optimizer)
+			if readyPods >= 4 && totalPods >= 4 {
 				logger.Info("All Kruize pods are ready", "readyPods", readyPods)
 				return nil
 			}
@@ -191,6 +193,7 @@ func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace stri
 		}
 	}
 }
+
 
 func (r *KruizeReconciler) checkKruizePodsStatus(ctx context.Context, namespace string) (int, int, map[string]string, error) {
 	podList := &corev1.PodList{}
@@ -242,7 +245,8 @@ func (r *KruizeReconciler) deployKruize(ctx context.Context, kruize *kruizev1alp
 		"cluster_type", kruize.Spec.Cluster_type,
 		"namespace", kruize.Spec.Namespace,
 		"autotune_image", kruize.Spec.Autotune_image,
-		"autotune_ui_image", kruize.Spec.Autotune_ui_image)
+		"autotune_ui_image", kruize.Spec.Autotune_ui_image,
+		"optimizer_image", kruize.Spec.Optimizer_image)
 
 	// Normalize and validate cluster type (case-insensitive)
 	cluster_type := kruize.Spec.Cluster_type
@@ -280,31 +284,31 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 		namespace,
 		kruize.Spec.Autotune_image,
 		kruize.Spec.Autotune_ui_image,
+		kruize.Spec.Optimizer_image,
 		clusterType,
+		&kruize.Spec,
+		ctx,
 	)
 
 
 	// Reconcile cluster-scoped resources based on cluster type
 	var clusterScopedObjects []client.Object
-	var namespacedObjects []client.Object
 	var configmap client.Object
 
 	if clusterType == constants.ClusterTypeOpenShift {
 		// OpenShift-specific resources
-        	kruizeServiceAccount := k8sObjectGenerator.KruizeServiceAccount()
-        	if err := r.reconcileClusterResource(ctx, kruizeServiceAccount); err != nil {
-            		logger.Error(err, "Failed to reconcile kruize service account")
-            		return err
-        	}
+	       	kruizeServiceAccount := k8sObjectGenerator.KruizeServiceAccount()
+	       	if err := r.reconcileClusterResource(ctx, kruizeServiceAccount); err != nil {
+	           		logger.Error(err, "Failed to reconcile kruize service account")
+	           		return err
+	       	}
 
 		clusterScopedObjects = k8sObjectGenerator.ClusterScopedResources()
 		configmap = k8sObjectGenerator.KruizeConfigMap()
-		namespacedObjects = k8sObjectGenerator.NamespacedResources()
 	} else {
 		// Kind/Minikube-specific resources
 		clusterScopedObjects = k8sObjectGenerator.KubernetesClusterScopedResources()
 		configmap = k8sObjectGenerator.KruizeConfigMapKubernetes()
-		namespacedObjects = k8sObjectGenerator.KubernetesNamespacedResources()
 	}
 
 	// Reconcile cluster-scoped resources (no owner reference)
@@ -321,15 +325,37 @@ func (r *KruizeReconciler) deployKruizeComponents(ctx context.Context, namespace
 		return err
 	}
 
-	// Reconcile namespace-scoped resources (WITH owner reference)
-	for _, obj := range namespacedObjects {
+	// Deploy core Kruize resources (DB, Kruize, UI) without optimizer
+	var coreResources []client.Object
+	var optimizerResources []client.Object
+
+	if clusterType == constants.ClusterTypeOpenShift {
+		coreResources = k8sObjectGenerator.CoreNamespacedResources()
+		optimizerResources = k8sObjectGenerator.OptimizerNamespacedResources()
+	} else {
+		coreResources = k8sObjectGenerator.CoreKubernetesNamespacedResources()
+		optimizerResources = k8sObjectGenerator.OptimizerKubernetesNamespacedResources()
+	}
+
+	logger.Info("Deploying core Kruize resources", "namespace", namespace)
+	for _, obj := range coreResources {
 		if err := r.reconcileNamespacedResource(ctx, kruize, obj); err != nil {
-			logger.Error(err, "Failed to reconcile namespaced resource", "Kind", obj.GetObjectKind().GroupVersionKind().Kind, "Name", obj.GetName())
+			logger.Error(err, "Failed to reconcile core resource", "Kind", obj.GetObjectKind().GroupVersionKind().Kind, "Name", obj.GetName())
 			return err
 		}
 	}
 
-	logger.Info("Successfully reconciled all dependent resources", "clusterType", clusterType)
+	// Deploy optimizer resources with init container that waits for Kruize
+	// The init container in the optimizer deployment will handle waiting for Kruize to be ready
+	logger.Info("Deploying optimizer resources (init container will wait for Kruize to be ready)", "namespace", namespace)
+	for _, obj := range optimizerResources {
+		if err := r.reconcileNamespacedResource(ctx, kruize, obj); err != nil {
+			logger.Error(err, "Failed to reconcile optimizer resource", "Kind", obj.GetObjectKind().GroupVersionKind().Kind, "Name", obj.GetName())
+			return err
+		}
+	}
+
+	logger.Info("Successfully reconciled all dependent resources in phases", "clusterType", clusterType)
 	return nil
 }
 

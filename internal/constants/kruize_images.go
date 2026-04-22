@@ -25,21 +25,30 @@ const (
 	
 	// envUIImage is the environment variable name for overriding the default Kruize UI image
 	envUIImage = "DEFAULT_AUTOTUNE_UI_IMAGE"
+	
+	// envOptimizerImage is the environment variable name for overriding the default Optimizer image
+	envOptimizerImage = "DEFAULT_OPTIMIZER_IMAGE"
 )
 
 // Default container image versions
 const (
 	// defaultAutotuneImageTag is the default tag for Kruize Autotune image
-	defaultAutotuneImageTag = "0.8.1"
+	defaultAutotuneImageTag = "0.9"
 	
 	// defaultUIImageTag is the default tag for Kruize UI image
-	defaultUIImageTag = "0.0.9"
+	defaultUIImageTag = "0.1.0"
+	
+	// defaultOptimizerImageTag is the default tag for Kruize Optimizer image
+	defaultOptimizerImageTag = "0.0.1"
 	
 	// defaultAutotuneImageRepo is the default repository for Kruize Autotune image
 	defaultAutotuneImageRepo = "quay.io/kruize/autotune_operator"
 	
 	// defaultUIImageRepo is the default repository for Kruize UI image
 	defaultUIImageRepo = "quay.io/kruize/kruize-ui"
+	
+	// defaultOptimizerImageRepo is the default repository for Kruize Optimizer image
+	defaultOptimizerImageRepo = "quay.io/kruize/kruize-optimizer"
 )
 
 // Package-level variables that cache the resolved default images.
@@ -47,7 +56,8 @@ const (
 // environment variable lookups on every function call.
 var (
 	defaultAutotuneImage   string
-	defaultUIImage string
+	defaultUIImage         string
+	defaultOptimizerImage  string
 )
 
 // init resolves the default images by checking environment variables once at package initialization.
@@ -66,6 +76,13 @@ func init() {
 	} else {
 		defaultUIImage = defaultUIImageRepo + ":" + defaultUIImageTag
 	}
+	
+	// Resolve Optimizer image
+	if envImage := os.Getenv(envOptimizerImage); envImage != "" {
+		defaultOptimizerImage = envImage
+	} else {
+		defaultOptimizerImage = defaultOptimizerImageRepo + ":" + defaultOptimizerImageTag
+	}
 }
 
 // GetDefaultAutotuneImage returns the cached default Autotune image.
@@ -78,4 +95,10 @@ func GetDefaultAutotuneImage() string {
 // The image is resolved once at package initialization from environment variables or defaults.
 func GetDefaultUIImage() string {
 	return defaultUIImage
+}
+
+// GetDefaultOptimizerImage returns the cached default Optimizer image.
+// The image is resolved once at package initialization from environment variables or defaults.
+func GetDefaultOptimizerImage() string {
+	return defaultOptimizerImage
 }

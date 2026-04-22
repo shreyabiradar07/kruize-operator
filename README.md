@@ -20,7 +20,7 @@ For examples of running Kruize and the operator, see [kruize-demos](https://gith
 
 **For Deployment:**
 - kubectl version v1.23.0+
-- Access to a Kubernetes v1.23.0+ or OpenShift v4.10+ cluster
+- Access to a Kubernetes v1.23.0+ or OpenShift v4.12+ cluster
 - [Prometheus](https://github.com/prometheus/prometheus) (for Minikube, Kind clusters)
 
 **For Building/Development:**
@@ -134,6 +134,27 @@ See [Prerequisites](#prerequisites) section above for required tools and version
 `make bundle` will create an OLM bundle in the `bundle/` directory. `make bundle-build` will create an OCI image of this bundle.
 
 `make catalog-build` will build an OCI image of the operator catalog.
+
+**Automated Build and Push Script:**
+
+For a streamlined build and push workflow with prerequisite checks and version management, use the provided script:
+
+```sh
+./scripts/operator_build_and_push.sh -o <operator_image> -b <bundle_image>
+```
+
+Example:
+```sh
+./scripts/operator_build_and_push.sh -o quay.io/kruize/kruize-operator:0.0.5 -b quay.io/kruize/kruize-operator-bundle:0.0.5
+```
+
+This script will:
+- Check prerequisites (including downloading operator-sdk if not available)
+- Update version files automatically
+- Build and push both operator and bundle images
+- Verify the images after pushing
+
+For more details, see [`scripts/operator_build_and_push.sh`](scripts/operator_build_and_push.sh).
 
 ## DEVELOPMENT
 

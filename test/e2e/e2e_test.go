@@ -54,22 +54,22 @@ var _ = Describe("controller", Ordered, func() {
 	AfterAll(func() {
 		// Collect pod logs before cleanup
 		By("collecting pod logs before cleanup")
-		
+
 		// Define log directory path
 		logDir := "/tmp/pod-logs"
-		
+
 		// Remove any existing directory/file/symlink at the target path
 		// This prevents symlink attacks by ensuring we create a real directory
 		_ = os.RemoveAll(logDir)
-		
+
 		// Create directory with secure permissions
 		if err := os.Mkdir(logDir, 0700); err != nil {
 			fmt.Fprintf(GinkgoWriter, "Warning: Failed to create log directory: %v\n", err)
 			return
 		}
-		
+
 		fmt.Fprintf(GinkgoWriter, "Collecting pod logs to %s\n", logDir)
-		
+
 		// Collect pod list
 		cmd := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "wide")
 		if output, err := utils.Run(cmd); err != nil {
@@ -79,14 +79,24 @@ var _ = Describe("controller", Ordered, func() {
 				fmt.Fprintf(GinkgoWriter, "Warning: Failed to write pod list: %v\n", err)
 			}
 		}
-		
+
 		// Collect operator logs
-		cmd = exec.Command("kubectl", "logs", "-n", namespace, "-l", "control-plane=controller-manager", "--all-containers=true", "--prefix=true", "--tail=-1")
+		cmd = exec.Command("kubectl", "logs", "-n", namespace, "-l", "control-plane=kruize-operator", "--all-containers=true", "--prefix=true", "--tail=-1")
 		if output, err := utils.Run(cmd); err != nil {
 			fmt.Fprintf(GinkgoWriter, "Warning: Failed to collect operator logs: %v\n", err)
 		} else {
 			if err := os.WriteFile(filepath.Join(logDir, "operator-logs.txt"), output, 0600); err != nil {
 				fmt.Fprintf(GinkgoWriter, "Warning: Failed to write operator logs: %v\n", err)
+			}
+		}
+
+		// Collect operator pod description
+		cmd = exec.Command("kubectl", "describe", "pods", "-n", namespace, "-l", "control-plane=kruize-operator")
+		if output, err := utils.Run(cmd); err != nil {
+			fmt.Fprintf(GinkgoWriter, "Warning: Failed to collect operator pod description: %v\n", err)
+		} else {
+			if err := os.WriteFile(filepath.Join(logDir, "operator-pod-description.txt"), output, 0600); err != nil {
+				fmt.Fprintf(GinkgoWriter, "Warning: Failed to write operator pod description: %v\n", err)
 			}
 		}
 
@@ -219,7 +229,7 @@ var _ = Describe("controller", Ordered, func() {
 			if clusterType == constants.ClusterTypeOpenShift {
 				expectedSA = "kruize-sa"
 			}
-			
+
 			By(fmt.Sprintf("checking that Kruize ServiceAccount '%s' is created", expectedSA))
 			Eventually(func() error {
 				cmd := exec.Command("kubectl", "get", "serviceaccount", expectedSA, "-n", namespace)
@@ -233,7 +243,7 @@ var _ = Describe("controller", Ordered, func() {
 				var cmd *exec.Cmd
 				var output []byte
 				var err error
-				
+
 				cmd = exec.Command("kubectl", "get", "deployment", "kruize-db-deployment", "-n", namespace, "-o", "jsonpath={.status.readyReplicas}")
 				output, err = utils.Run(cmd)
 				if err != nil {
@@ -244,7 +254,7 @@ var _ = Describe("controller", Ordered, func() {
 						return fmt.Errorf("neither kruize-db-deployment nor kruize-db found: %w", err)
 					}
 				}
-				
+
 				if string(output) != "1" {
 					return fmt.Errorf("database deployment not ready")
 				}
@@ -264,13 +274,27 @@ var _ = Describe("controller", Ordered, func() {
 				return nil
 			}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
+			By("checking that Kruize UI deployment is ready")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "deployment", "kruize-ui-nginx", "-n", namespace, "-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				if err != nil {
+					return err
+				}
+				if string(output) != "1" {
+					return fmt.Errorf("UI deployment not ready")
+				}
+				return nil
+			}, 3*time.Minute, 10*time.Second).Should(Succeed())
+
+
 			By("verifying deployed Kruize image")
 			cmd = exec.Command("kubectl", "get", "deployment", "kruize", "-n", namespace, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
 			output, err := utils.Run(cmd)
 			ExpectWithOffset(1, err).NotTo(HaveOccurred())
 			deployedImage := strings.TrimSpace(string(output))
 			fmt.Fprintf(GinkgoWriter, "Deployed Kruize image: %s\n", deployedImage)
-			
+
 			// If custom Kruize image was specified, verify it matches
 			if kruizeImage != "" {
 				if deployedImage == kruizeImage {
@@ -282,11 +306,43 @@ var _ = Describe("controller", Ordered, func() {
 				fmt.Fprintf(GinkgoWriter, "Using default Kruize image from CR: %s\n", deployedImage)
 			}
 
+			By("verifying deployed Kruize UI image")
+			cmd = exec.Command("kubectl", "get", "deployment", "kruize-ui-nginx", "-n", namespace, "-o", "jsonpath={.spec.template.spec.containers[0].image}")
+			output, err = utils.Run(cmd)
+			ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			deployedUIImage := strings.TrimSpace(string(output))
+			fmt.Fprintf(GinkgoWriter, "Deployed Kruize UI image: %s\n", deployedUIImage)
+			
+			// If custom Kruize UI image was specified, verify it matches and fail on mismatch
+			if kruizeUIImage != "" {
+				fmt.Fprintf(GinkgoWriter, "Validating deployed UI image against KRUIZE_UI_IMAGE: %s\n", kruizeUIImage)
+				ExpectWithOffset(1, deployedUIImage).To(
+					Equal(kruizeUIImage),
+					fmt.Sprintf("Deployed UI image %s does not match KRUIZE_UI_IMAGE %s", deployedUIImage, kruizeUIImage),
+				)
+				fmt.Fprintf(GinkgoWriter, "✓ Deployed UI image matches specified KRUIZE_UI_IMAGE: %s\n", kruizeUIImage)
+			} else {
+				fmt.Fprintf(GinkgoWriter, "Using default Kruize UI image from CR: %s\n", deployedUIImage)
+			}
+
 			By("verifying Kruize API is responding")
 			Eventually(func() error {
 				cmd := exec.Command("kubectl", "exec", "deployment/kruize", "-n", namespace, "--", "curl", "-s", "localhost:8080/health")
 				_, err := utils.Run(cmd)
 				return err
+			}, 3*time.Minute, 10*time.Second).Should(Succeed())
+
+			By("checking that Kruize Optimizer deployment is ready")
+			Eventually(func() error {
+				cmd := exec.Command("kubectl", "get", "deployment", "kruize-optimizer", "-n", namespace, "-o", "jsonpath={.status.readyReplicas}")
+				output, err := utils.Run(cmd)
+				if err != nil {
+					return err
+				}
+				if string(output) != "1" {
+					return fmt.Errorf("kruize-optimizer deployment not ready")
+				}
+				return nil
 			}, 3*time.Minute, 10*time.Second).Should(Succeed())
 
 			By("checking that datasource is configured via Kruize API")

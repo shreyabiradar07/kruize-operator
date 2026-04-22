@@ -32,6 +32,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/kruize/kruize-operator/internal/utils"
+	ctrl "sigs.k8s.io/controller-runtime"
+
 	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 	//+kubebuilder:scaffold:imports
 )
@@ -81,6 +84,19 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	// ADDED FOR NATIVE METRICS AUTH TESTING
+	By("starting the manager with native metrics auth")
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme:  scheme.Scheme,
+		Metrics: utils.GetMetricsOptions(utils.LocalMetricsAddr, true, false),
+	})
+
+	Expect(err).ToNot(HaveOccurred())
+	go func() {
+		defer GinkgoRecover()
+		err = mgr.Start(ctrl.SetupSignalHandler())
+		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
+	}()
 })
 
 var _ = AfterSuite(func() {

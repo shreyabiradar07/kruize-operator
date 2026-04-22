@@ -8,7 +8,67 @@ metadata:
 spec:
   # Supported values: "openshift", "minikube", "kind"
   cluster_type: "openshift"
-  autotune_image: "quay.io/kruize/autotune_operator:0.8.1"
-  autotune_ui_image: "quay.io/kruize/kruize-ui:0.0.9"
+  autotune_image: "quay.io/kruize/autotune_operator:0.9"
+  autotune_ui_image: "quay.io/kruize/kruize-ui:0.1.0"
+  optimizer_image: "quay.io/kruize/kruize-optimizer:0.0.1"
   # For OpenShift, use: "openshift-tuning", Minikube/KIND, use: "monitoring"
   namespace: "openshift-tuning"
+  
+  # Optional: Resource configuration for Kruize components
+  # If not specified, default values will be used
+  # Persistent Volume configuration
+  persistentVolume:
+    name: "kruize-db-pv-volume"
+    storageClassName: "manual"
+    capacity:
+      storage: "500Mi"
+    accessModes:
+      - "ReadWriteMany"
+    hostPath:
+      path: "/mnt/data"
+    labels:
+      type: "local"
+      app: "kruize-db"
+  
+  # Persistent Volume Claim configuration
+  persistentVolumeClaim:
+    name: "kruize-db-pv-claim"
+    storageClassName: "manual"
+    accessModes:
+      - "ReadWriteMany"
+    resources:
+      requests:
+        storage: "500Mi"
+    labels:
+      app: "kruize-db"
+  
+  # Database resource configuration
+  kruize-db:
+    resources:
+      requests:
+        memory: "100Mi"
+        cpu: "0.5"
+      limits:
+        memory: "100Mi"
+        cpu: "0.5"
+    
+    # Volume mount configuration (container-level)
+    volumeMounts:
+      - name: "kruize-db-storage"
+        mountPath: "/var/lib/pgsql/data"
+    
+    # Volume configuration (pod-level)
+    volumes:
+      - name: "kruize-db-storage"
+        persistentVolumeClaim:
+          claimName: "kruize-db-pv-claim"
+  
+  # Kruize application resource configuration
+  kruize:
+    resources:
+      requests:
+        memory: "768Mi"
+        cpu: "0.7"
+      limits:
+        memory: "768Mi"
+        cpu: "0.7"

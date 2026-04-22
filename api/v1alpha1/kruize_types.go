@@ -40,9 +40,185 @@ type KruizeSpec struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Autotune UI Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	Autotune_ui_image string `json:"autotune_ui_image"`
 
+	// Container image for Kruize Optimizer
+	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Optimizer Image",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
+	Optimizer_image   string `json:"optimizer_image,omitempty"`
+
 	// Target namespace for Kruize deployment
 	// +operator-sdk:csv:customresourcedefinitions:type=spec,displayName="Namespace",xDescriptors={"urn:alm:descriptor:com.tectonic.ui:text"}
 	Namespace         string `json:"namespace"`
+
+	// Persistent Volume configuration
+	// +optional
+	PersistentVolume *PersistentVolumeSpec `json:"persistentVolume,omitempty"`
+
+	// Persistent Volume Claim configuration
+	// +optional
+	PersistentVolumeClaim *PersistentVolumeClaimSpec `json:"persistentVolumeClaim,omitempty"`
+
+	// Database resource configuration
+	// +optional
+	KruizeDB *KruizeDBConfig `json:"kruize-db,omitempty"`
+
+	// Kruize application resource configuration
+	// +optional
+	Kruize *KruizeAppConfig `json:"kruize,omitempty"`
+}
+
+// KubernetesResourceRequirements defines Kubernetes-style resource requirements
+type KubernetesResourceRequirements struct {
+	// Resource requests
+	// +optional
+	Requests *ResourceList `json:"requests,omitempty"`
+
+	// Resource limits
+	// +optional
+	Limits *ResourceList `json:"limits,omitempty"`
+}
+
+// ResourceList defines CPU and memory resources
+type ResourceList struct {
+	// Memory (e.g., "100Mi", "1Gi")
+	// +optional
+	Memory string `json:"memory,omitempty"`
+
+	// CPU (e.g., "0.5", "500m")
+	// +optional
+	CPU string `json:"cpu,omitempty"`
+}
+
+// KruizeAppConfig defines configuration for Kruize application
+type KruizeAppConfig struct {
+	// Resource requirements
+	// +optional
+	Resources *KubernetesResourceRequirements `json:"resources,omitempty"`
+}
+
+// KruizeDBConfig defines configuration for Kruize database
+type KruizeDBConfig struct {
+	// Resource requirements
+	// +optional
+	Resources *KubernetesResourceRequirements `json:"resources,omitempty"`
+
+	// Volume mounts for the container
+	// +optional
+	VolumeMounts []VolumeMount `json:"volumeMounts,omitempty"`
+
+	// Volumes for the pod
+	// +optional
+	Volumes []Volume `json:"volumes,omitempty"`
+}
+
+// VolumeMount describes a mounting of a Volume within a container
+type VolumeMount struct {
+	// Name of the volume to mount
+	Name string `json:"name"`
+
+	// Path within the container at which the volume should be mounted
+	MountPath string `json:"mountPath"`
+}
+
+// Volume represents a named volume in a pod
+type Volume struct {
+	// Name of the volume
+	Name string `json:"name"`
+
+	// PersistentVolumeClaim represents a reference to a PersistentVolumeClaim
+	// +optional
+	PersistentVolumeClaim *PersistentVolumeClaimVolumeSource `json:"persistentVolumeClaim,omitempty"`
+}
+
+// PersistentVolumeClaimVolumeSource references a PVC in the same namespace
+type PersistentVolumeClaimVolumeSource struct {
+	// ClaimName is the name of the PVC in the same namespace
+	ClaimName string `json:"claimName"`
+}
+
+// PersistentVolumeAccessMode defines the access mode for persistent volumes
+// +kubebuilder:validation:Enum=ReadWriteOnce;ReadOnlyMany;ReadWriteMany;ReadWriteOncePod
+type PersistentVolumeAccessMode string
+
+const (
+	// ReadWriteOnce allows read-write access by a single node
+	ReadWriteOnce PersistentVolumeAccessMode = "ReadWriteOnce"
+	// ReadOnlyMany allows read-only access by multiple nodes
+	ReadOnlyMany PersistentVolumeAccessMode = "ReadOnlyMany"
+	// ReadWriteMany allows read-write access by multiple nodes
+	ReadWriteMany PersistentVolumeAccessMode = "ReadWriteMany"
+	// ReadWriteOncePod allows read-write access by a single pod
+	ReadWriteOncePod PersistentVolumeAccessMode = "ReadWriteOncePod"
+)
+
+// PersistentVolumeSpec defines PersistentVolume configuration
+type PersistentVolumeSpec struct {
+	// Name of the PersistentVolume
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Storage class name
+	// +optional
+	StorageClassName string `json:"storageClassName,omitempty"`
+
+	// Capacity defines the storage capacity
+	// +optional
+	Capacity *StorageCapacity `json:"capacity,omitempty"`
+
+	// Access modes for the persistent volume
+	// +optional
+	// +kubebuilder:validation:MaxItems=4
+	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+	// Host path configuration
+	// +optional
+	HostPath *HostPathVolumeSource `json:"hostPath,omitempty"`
+
+	// Labels for the PersistentVolume
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// PersistentVolumeClaimSpec defines PersistentVolumeClaim configuration
+type PersistentVolumeClaimSpec struct {
+	// Name of the PersistentVolumeClaim
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Storage class name
+	// +optional
+	StorageClassName string `json:"storageClassName,omitempty"`
+
+	// Access modes for the persistent volume claim
+	// +optional
+	// +kubebuilder:validation:MaxItems=4
+	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+
+	// Resources defines the storage resources
+	// +optional
+	Resources *PVCResourceRequirements `json:"resources,omitempty"`
+
+	// Labels for the PersistentVolumeClaim
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
+// StorageCapacity defines storage capacity
+type StorageCapacity struct {
+	// Storage size (e.g., "500Mi", "1Gi")
+	// +optional
+	Storage string `json:"storage,omitempty"`
+}
+
+// HostPathVolumeSource represents a host path mapped into a pod
+type HostPathVolumeSource struct {
+	// Path of the directory on the host
+	Path string `json:"path"`
+}
+
+// PVCResourceRequirements describes the storage resources required by a PVC
+type PVCResourceRequirements struct {
+	// Requests describes the minimum storage resources required
+	// +optional
+	Requests *StorageCapacity `json:"requests,omitempty"`
 }
 
 // KruizeStatus defines the observed state of Kruize

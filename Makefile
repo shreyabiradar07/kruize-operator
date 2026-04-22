@@ -1,9 +1,9 @@
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
-# - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.4)
-# - use environment variables to overwrite this value (e.g export VERSION=0.0.4)
-VERSION ?= 0.0.4
+# - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.5)
+# - use environment variables to overwrite this value (e.g export VERSION=0.0.5)
+VERSION ?= 0.0.5
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -285,22 +285,35 @@ mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
 }
 endef
 
-.PHONY: operator-sdk
+# Check if operator-sdk exists system-wide first, otherwise use local bin
+ifeq (,$(shell which operator-sdk 2>/dev/null))
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
-operator-sdk: ## Download operator-sdk locally if necessary.
-ifeq (,$(wildcard $(OPERATOR_SDK)))
-ifeq (, $(shell which operator-sdk 2>/dev/null))
-	@{ \
-	set -e ;\
-	mkdir -p $(dir $(OPERATOR_SDK)) ;\
-	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
-	chmod +x $(OPERATOR_SDK) ;\
-	}
 else
-OPERATOR_SDK = $(shell which operator-sdk)
+OPERATOR_SDK ?= $(shell which operator-sdk)
 endif
-endif
+
+.PHONY: operator-sdk
+operator-sdk: ## Download operator-sdk locally if necessary.
+	@if [ ! -f $(OPERATOR_SDK) ]; then \
+		if [ "$(OPERATOR_SDK)" = "$(LOCALBIN)/operator-sdk" ]; then \
+			echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)..." ;\
+			mkdir -p $(LOCALBIN) ;\
+			OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
+			case $$ARCH in \
+				x86_64) ARCH=amd64 ;; \
+				aarch64) ARCH=arm64 ;; \
+			esac ;\
+			curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+			chmod +x $(OPERATOR_SDK) ;\
+			echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
+		else \
+			echo "Error: Custom OPERATOR_SDK path '$(OPERATOR_SDK)' does not exist." ;\
+			echo "Please ensure the binary exists at the specified path or use the default location." ;\
+			exit 1 ;\
+		fi ;\
+	else \
+		echo "Using operator-sdk: $(OPERATOR_SDK)" ;\
+	fi
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.

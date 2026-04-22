@@ -1,8 +1,9 @@
 package utils
 
 import (
+	"context"
 	"fmt"
-
+	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 	"github.com/kruize/kruize-operator/internal/constants"
 	routev1 "github.com/openshift/api/route/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -16,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func boolPtr(b bool) *bool {
@@ -31,20 +33,27 @@ type KruizeResourceGenerator struct {
 	Namespace         string
 	Autotune_image    string
 	Autotune_ui_image string
+	Optimizer_image   string
 	ClusterType       string // "openshift", "minikube", or "kind"
+	KruizeSpec        *kruizev1alpha1.KruizeSpec
+	Ctx               context.Context
 }
 
 // NewKruizeResourceGenerator creates a new generator for Kruize resources.
-func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string, clusterType string) *KruizeResourceGenerator {
+func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotuneUIImage string,  optimizerImage string, clusterType string, kruizeSpec *kruizev1alpha1.KruizeSpec, ctx context.Context) *KruizeResourceGenerator {
 	// If no image is provided from the CR, use a sensible default.
 	// The default can be configured via environment variables:
 	// - DEFAULT_AUTOTUNE_IMAGE: Override the default Autotune image
 	// - DEFAULT_AUTOTUNE_UI_IMAGE: Override the default Autotune UI image
+	// - DEFAULT_OPTIMIZER_IMAGE: Override the default Optimizer image
 	if autotuneImage == "" {
 		autotuneImage = constants.GetDefaultAutotuneImage()
 	}
 	if autotuneUIImage == "" {
 		autotuneUIImage = constants.GetDefaultUIImage()
+	}
+	if optimizerImage == "" {
+		optimizerImage = constants.GetDefaultOptimizerImage()
 	}
 	if clusterType == "" {
 		clusterType = constants.ClusterTypeOpenShift // Default to openshift for backward compatibility
@@ -53,8 +62,419 @@ func NewKruizeResourceGenerator(namespace string, autotuneImage string, autotune
 		Namespace:         namespace,
 		Autotune_image:    autotuneImage,
 		Autotune_ui_image: autotuneUIImage,
+		Optimizer_image:   optimizerImage,
 		ClusterType:       clusterType,
+		KruizeSpec:        kruizeSpec,
+		Ctx:               ctx,
 	}
+}
+
+// getResourceValue returns the configured value or a default
+func (g *KruizeResourceGenerator) getResourceValue(configValue, defaultValue string) string {
+	if configValue != "" {
+		return configValue
+	}
+	return defaultValue
+}
+
+// parseResourceQuantity safely parses a resource quantity string.
+// If parsing the user-provided value fails, it falls back to the default value and logs a warning.
+func (g *KruizeResourceGenerator) parseResourceQuantity(value, defaultValue string) resource.Quantity {
+	// Parse the user-provided value first
+	quantity, err := resource.ParseQuantity(value)
+	if err == nil {
+		return quantity
+	}
+	
+	// If user value is invalid, log a warning and fall back to the default value
+	logger := log.FromContext(g.Ctx)
+	logger.Info("Invalid resource quantity specified, falling back to default",
+		"provided", value,
+		"default", defaultValue,
+		"error", err.Error())
+	
+	// The default values are hardcoded constants, so MustParse is safe here
+	return resource.MustParse(defaultValue)
+}
+
+// getDBResources returns database resource requirements with defaults
+// For minikube/kind, defaults are disabled unless explicitly specified in the CR
+func (g *KruizeResourceGenerator) getDBResources() corev1.ResourceRequirements {
+	// For minikube/kind, only apply resources if explicitly specified in the CR
+	if (g.ClusterType == constants.ClusterTypeMinikube || g.ClusterType == constants.ClusterTypeKind) {
+		if g.KruizeSpec == nil || g.KruizeSpec.KruizeDB == nil || g.KruizeSpec.KruizeDB.Resources == nil {
+			// Return empty resource requirements for minikube/kind when not specified
+			return corev1.ResourceRequirements{}
+		}
+		// For minikube/kind with explicit resources, use only what's specified (no defaults)
+		res := g.KruizeSpec.KruizeDB.Resources
+		requirements := corev1.ResourceRequirements{}
+		
+		if res.Requests != nil {
+			if res.Requests.CPU != "" || res.Requests.Memory != "" {
+				requirements.Requests = corev1.ResourceList{}
+				if res.Requests.CPU != "" {
+					requirements.Requests[corev1.ResourceCPU] = resource.MustParse(res.Requests.CPU)
+				}
+				if res.Requests.Memory != "" {
+					requirements.Requests[corev1.ResourceMemory] = resource.MustParse(res.Requests.Memory)
+				}
+			}
+		}
+		if res.Limits != nil {
+			if res.Limits.CPU != "" || res.Limits.Memory != "" {
+				requirements.Limits = corev1.ResourceList{}
+				if res.Limits.CPU != "" {
+					requirements.Limits[corev1.ResourceCPU] = resource.MustParse(res.Limits.CPU)
+				}
+				if res.Limits.Memory != "" {
+					requirements.Limits[corev1.ResourceMemory] = resource.MustParse(res.Limits.Memory)
+				}
+			}
+		}
+		return requirements
+	}
+
+	// For OpenShift, use defaults
+	cpuRequest := constants.DefaultDBCPURequest
+	cpuLimit := constants.DefaultDBCPULimit
+	memoryRequest := constants.DefaultDBMemoryRequest
+	memoryLimit := constants.DefaultDBMemoryLimit
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && g.KruizeSpec.KruizeDB.Resources != nil {
+		res := g.KruizeSpec.KruizeDB.Resources
+		if res.Requests != nil {
+			cpuRequest = g.getResourceValue(res.Requests.CPU, cpuRequest)
+			memoryRequest = g.getResourceValue(res.Requests.Memory, memoryRequest)
+		}
+		if res.Limits != nil {
+			cpuLimit = g.getResourceValue(res.Limits.CPU, cpuLimit)
+			memoryLimit = g.getResourceValue(res.Limits.Memory, memoryLimit)
+		}
+	}
+
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryRequest, constants.DefaultDBMemoryRequest),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuRequest, constants.DefaultDBCPURequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryLimit, constants.DefaultDBMemoryLimit),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuLimit, constants.DefaultDBCPULimit),
+		},
+	}
+}
+
+// getKruizeResources returns Kruize application resource requirements with defaults
+// For minikube/kind, defaults are disabled unless explicitly specified in the CR
+func (g *KruizeResourceGenerator) getKruizeResources() corev1.ResourceRequirements {
+	// For minikube/kind, only apply resources if explicitly specified in the CR
+	if (g.ClusterType == constants.ClusterTypeMinikube || g.ClusterType == constants.ClusterTypeKind) {
+		if g.KruizeSpec == nil || g.KruizeSpec.Kruize == nil || g.KruizeSpec.Kruize.Resources == nil {
+			// Return empty resource requirements for minikube/kind when not specified
+			return corev1.ResourceRequirements{}
+		}
+		// For minikube/kind with explicit resources, use only what's specified (no defaults)
+		res := g.KruizeSpec.Kruize.Resources
+		requirements := corev1.ResourceRequirements{}
+		
+		if res.Requests != nil {
+			if res.Requests.CPU != "" || res.Requests.Memory != "" {
+				requirements.Requests = corev1.ResourceList{}
+				if res.Requests.CPU != "" {
+					requirements.Requests[corev1.ResourceCPU] = resource.MustParse(res.Requests.CPU)
+				}
+				if res.Requests.Memory != "" {
+					requirements.Requests[corev1.ResourceMemory] = resource.MustParse(res.Requests.Memory)
+				}
+			}
+		}
+		if res.Limits != nil {
+			if res.Limits.CPU != "" || res.Limits.Memory != "" {
+				requirements.Limits = corev1.ResourceList{}
+				if res.Limits.CPU != "" {
+					requirements.Limits[corev1.ResourceCPU] = resource.MustParse(res.Limits.CPU)
+				}
+				if res.Limits.Memory != "" {
+					requirements.Limits[corev1.ResourceMemory] = resource.MustParse(res.Limits.Memory)
+				}
+			}
+		}
+		return requirements
+	}
+
+	// For OpenShift, use defaults
+	cpuRequest := constants.DefaultKruizeCPURequest
+	cpuLimit := constants.DefaultKruizeCPULimit
+	memoryRequest := constants.DefaultKruizeMemoryRequest
+	memoryLimit := constants.DefaultKruizeMemoryLimit
+
+	if g.KruizeSpec != nil && g.KruizeSpec.Kruize != nil && g.KruizeSpec.Kruize.Resources != nil {
+		res := g.KruizeSpec.Kruize.Resources
+		if res.Requests != nil {
+			cpuRequest = g.getResourceValue(res.Requests.CPU, cpuRequest)
+			memoryRequest = g.getResourceValue(res.Requests.Memory, memoryRequest)
+		}
+		if res.Limits != nil {
+			cpuLimit = g.getResourceValue(res.Limits.CPU, cpuLimit)
+			memoryLimit = g.getResourceValue(res.Limits.Memory, memoryLimit)
+		}
+	}
+
+	return corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryRequest, constants.DefaultKruizeMemoryRequest),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuRequest, constants.DefaultKruizeCPURequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: g.parseResourceQuantity(memoryLimit, constants.DefaultKruizeMemoryLimit),
+			corev1.ResourceCPU:    g.parseResourceQuantity(cpuLimit, constants.DefaultKruizeCPULimit),
+		},
+	}
+}
+
+// getDBVolumeMounts returns volume mounts for kruize-db with defaults
+func (g *KruizeResourceGenerator) getDBVolumeMounts() []corev1.VolumeMount {
+	defaultVolumeMounts := []corev1.VolumeMount{
+		{Name: "kruize-db-storage", MountPath: "/var/lib/pgsql/data"},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.VolumeMounts) > 0 {
+		volumeMounts := []corev1.VolumeMount{}
+		for _, vm := range g.KruizeSpec.KruizeDB.VolumeMounts {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      vm.Name,
+				MountPath: vm.MountPath,
+			})
+		}
+		return volumeMounts
+	}
+
+	return defaultVolumeMounts
+}
+
+// getDBVolumes returns volumes for kruize-db pod with defaults
+func (g *KruizeResourceGenerator) getDBVolumes() []corev1.Volume {
+	pvcName := g.getPVCName("kruize-db-pv-claim")
+
+	defaultVolumes := []corev1.Volume{
+		{
+			Name: "kruize-db-storage",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvcName,
+				},
+			},
+		},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.Volumes) > 0 {
+		volumes := []corev1.Volume{}
+		for _, v := range g.KruizeSpec.KruizeDB.Volumes {
+			volume := corev1.Volume{
+				Name: v.Name,
+			}
+			if v.PersistentVolumeClaim != nil {
+				volume.VolumeSource = corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: v.PersistentVolumeClaim.ClaimName,
+					},
+				}
+			}
+			volumes = append(volumes, volume)
+		}
+		return volumes
+	}
+
+	return defaultVolumes
+}
+
+// getDBVolumeMountsKubernetes returns volume mounts for kruize-db with Kubernetes defaults
+func (g *KruizeResourceGenerator) getDBVolumeMountsKubernetes() []corev1.VolumeMount {
+	defaultVolumeMounts := []corev1.VolumeMount{
+		{Name: "kruize-db-storage", MountPath: "/var/lib/postgresql/data"},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.VolumeMounts) > 0 {
+		volumeMounts := []corev1.VolumeMount{}
+		for _, vm := range g.KruizeSpec.KruizeDB.VolumeMounts {
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      vm.Name,
+				MountPath: vm.MountPath,
+			})
+		}
+		return volumeMounts
+	}
+
+	return defaultVolumeMounts
+}
+
+// getDBVolumesKubernetes returns volumes for kruize-db pod with Kubernetes defaults
+func (g *KruizeResourceGenerator) getDBVolumesKubernetes() []corev1.Volume {
+	pvcName := g.getPVCName("kruize-db-pvc")
+
+	defaultVolumes := []corev1.Volume{
+		{
+			Name: "kruize-db-storage",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvcName,
+				},
+			},
+		},
+	}
+
+	if g.KruizeSpec != nil && g.KruizeSpec.KruizeDB != nil && len(g.KruizeSpec.KruizeDB.Volumes) > 0 {
+		volumes := []corev1.Volume{}
+		for _, v := range g.KruizeSpec.KruizeDB.Volumes {
+			volume := corev1.Volume{
+				Name: v.Name,
+			}
+			if v.PersistentVolumeClaim != nil {
+				volume.VolumeSource = corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: v.PersistentVolumeClaim.ClaimName,
+					},
+				}
+			}
+			volumes = append(volumes, volume)
+		}
+		return volumes
+	}
+
+	return defaultVolumes
+}
+
+// ensurePVAndPVCStorageConsistency validates and logs if PVC storage size is greater than PV storage size.
+func ensurePVAndPVCStorageConsistency(pvStorageSize, pvcStorageSize string, ctx context.Context) (string, string, error) {
+	logger := log.FromContext(ctx)
+	
+	pvQty, err := resource.ParseQuantity(pvStorageSize)
+	if err != nil {
+		return pvStorageSize, pvcStorageSize, fmt.Errorf("failed to parse PV storage size %q: %w", pvStorageSize, err)
+	}
+
+	pvcQty, err := resource.ParseQuantity(pvcStorageSize)
+	if err != nil {
+		return pvStorageSize, pvcStorageSize, fmt.Errorf("failed to parse PVC storage size %q: %w", pvcStorageSize, err)
+	}
+
+	// If PVC > PV, surface the potential bind-time failure.
+	if pvcQty.Cmp(pvQty) == 1 {
+		logger.Info("PVC storage request is greater than PV storage; PVC may fail to bind",
+			"pvcStorageSize", pvcStorageSize,
+			"pvStorageSize", pvStorageSize)
+	}
+
+	return pvStorageSize, pvcStorageSize, nil
+}
+
+// getPVConfigWithDefaults is a shared helper that returns PV configuration with injected defaults
+func (g *KruizeResourceGenerator) getPVConfigWithDefaults(
+	defaultPVStorageSize, defaultStorageClassName, defaultHostPath string,
+	defaultAccessModes []corev1.PersistentVolumeAccessMode,
+) (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+	pvStorageSize = defaultPVStorageSize
+	pvcStorageSize = defaultPVStorageSize
+	storageClassName = defaultStorageClassName
+	hostPath = defaultHostPath
+	accessModes = defaultAccessModes
+
+	if g.KruizeSpec != nil {
+		// Get PV configuration
+		if g.KruizeSpec.PersistentVolume != nil {
+			pv := g.KruizeSpec.PersistentVolume
+			if pv.Capacity != nil && pv.Capacity.Storage != "" {
+				pvStorageSize = pv.Capacity.Storage
+			}
+			storageClassName = g.getResourceValue(pv.StorageClassName, storageClassName)
+			if pv.HostPath != nil && pv.HostPath.Path != "" {
+				hostPath = pv.HostPath.Path
+			}
+			if len(pv.AccessModes) > 0 {
+				accessModes = []corev1.PersistentVolumeAccessMode{}
+				for _, mode := range pv.AccessModes {
+					accessModes = append(accessModes, corev1.PersistentVolumeAccessMode(mode))
+				}
+			}
+		}
+
+		// Get PVC configuration
+		if g.KruizeSpec.PersistentVolumeClaim != nil {
+			pvc := g.KruizeSpec.PersistentVolumeClaim
+			if pvc.Resources != nil && pvc.Resources.Requests != nil && pvc.Resources.Requests.Storage != "" {
+				pvcStorageSize = pvc.Resources.Requests.Storage
+			} else {
+				pvcStorageSize = pvStorageSize
+			}
+		} else {
+			pvcStorageSize = pvStorageSize
+		}
+	}
+
+	// Validate PV/PVC storage consistency and log warnings if misconfigured
+	pvStorageSize, pvcStorageSize, err := ensurePVAndPVCStorageConsistency(pvStorageSize, pvcStorageSize, g.Ctx)
+	if err != nil {
+		logger := log.FromContext(g.Ctx)
+		logger.Info("Failed to validate PV/PVC storage consistency; continuing with provided values",
+			"error", err.Error(),
+			"pvStorageSize", pvStorageSize,
+			"pvcStorageSize", pvcStorageSize)
+	}
+
+	return pvStorageSize, pvcStorageSize, storageClassName, hostPath, accessModes
+}
+
+// getPVName returns the PV name from spec or default
+func (g *KruizeResourceGenerator) getPVName(defaultName string) string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolume != nil && g.KruizeSpec.PersistentVolume.Name != "" {
+		return g.KruizeSpec.PersistentVolume.Name
+	}
+	return defaultName
+}
+
+// getPVCName returns the PVC name from spec or default
+func (g *KruizeResourceGenerator) getPVCName(defaultName string) string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolumeClaim != nil && g.KruizeSpec.PersistentVolumeClaim.Name != "" {
+		return g.KruizeSpec.PersistentVolumeClaim.Name
+	}
+	return defaultName
+}
+
+// getPVLabels returns the PV labels from spec or default
+func (g *KruizeResourceGenerator) getPVLabels(defaultLabels map[string]string) map[string]string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolume != nil && len(g.KruizeSpec.PersistentVolume.Labels) > 0 {
+		return g.KruizeSpec.PersistentVolume.Labels
+	}
+	return defaultLabels
+}
+
+// getPVCLabels returns the PVC labels from spec or default
+func (g *KruizeResourceGenerator) getPVCLabels(defaultLabels map[string]string) map[string]string {
+	if g.KruizeSpec != nil && g.KruizeSpec.PersistentVolumeClaim != nil && len(g.KruizeSpec.PersistentVolumeClaim.Labels) > 0 {
+		return g.KruizeSpec.PersistentVolumeClaim.Labels
+	}
+	return defaultLabels
+}
+
+// getPVConfig returns PV configuration with defaults for OpenShift
+func (g *KruizeResourceGenerator) getPVConfig() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+	return g.getPVConfigWithDefaults(
+		constants.DefaultOpenShiftPVStorageSize,
+		constants.DefaultOpenShiftStorageClassName,
+		constants.DefaultOpenShiftHostPath,
+		[]corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+	)
+}
+
+// getPVConfigKubernetes returns PV configuration with defaults for Kubernetes/Kind/Minikube
+func (g *KruizeResourceGenerator) getPVConfigKubernetes() (pvStorageSize, pvcStorageSize, storageClassName, hostPath string, accessModes []corev1.PersistentVolumeAccessMode) {
+	return g.getPVConfigWithDefaults(
+		constants.DefaultKubernetesPVStorageSize,
+		constants.DefaultKubernetesStorageClassName,
+		constants.DefaultKubernetesHostPath,
+		[]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+	)
 }
 
 // ClusterScopedResources generates all cluster-scoped resources for Kruize.
@@ -71,14 +491,14 @@ func (g *KruizeResourceGenerator) ClusterScopedResources() []client.Object {
 		g.AutotuneClusterRoleBinding(),
 		g.ManualStorageClass(),
 		g.kruizeDBPersistentVolume(),
-		g.kruizeDBPersistentVolumeClaim(),
 	}
 }
 
-// NamespacedResources generates all OpenShift namespaced resources for Kruize.
-// These resources will get an owner reference set to the Kruize CR.
-func (g *KruizeResourceGenerator) NamespacedResources() []client.Object {
+// CoreNamespacedResources generates core Kruize resources (DB, Kruize, UI) without optimizer.
+// Deploy these first and wait for Kruize to be ready before deploying optimizer.
+func (g *KruizeResourceGenerator) CoreNamespacedResources() []client.Object {
 	objects := []client.Object{
+		g.kruizeDBPersistentVolumeClaim(),
 		g.kruizeDBDeployment(),
 		g.kruizeDBService(),
 		g.kruizeDeployment(),
@@ -87,12 +507,21 @@ func (g *KruizeResourceGenerator) NamespacedResources() []client.Object {
 		g.kruizeServiceMonitor(),
 		g.nginxConfigMap(),
 		g.kruizeUINginxService(),
-		g.kruizeUINginxPod(),
+		g.kruizeUINginxDeployment(),
 		g.deletePartitionCronJob(),
 	}
 
 	objects = append(objects, g.Routes()...)
 	return objects
+}
+
+// OptimizerNamespacedResources generates optimizer-specific resources.
+// Deploy these after Kruize core is ready.
+func (g *KruizeResourceGenerator) OptimizerNamespacedResources() []client.Object {
+	return []client.Object{
+		g.kruizeOptimizerDeployment(),
+		g.kruizeOptimizerService(),
+	}
 }
 
 func (g *KruizeResourceGenerator) Routes() []client.Object {
@@ -268,30 +697,32 @@ func (g *KruizeResourceGenerator) ManualStorageClass() *storagev1.StorageClass {
 // kruizeDBPersistentVolume generates the PersistentVolume for the Kruize database.
 // Note: PersistentVolumes are cluster-scoped resources.
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentVolume {
+	pvStorageSize, _, storageClassName, hostPath, accessModes := g.getPVConfig()
+	pvName := g.getPVName("kruize-db-pv-volume")
+	labels := g.getPVLabels(map[string]string{
+		"type": "local",
+		"app":  "kruize-db",
+	})
+
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "PersistentVolume",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kruize-db-pv-volume",
-			Labels: map[string]string{
-				"type": "local",
-				"app":  "kruize-db",
-			},
+			Name:   pvName,
+			Labels: labels,
 		},
 		Spec: corev1.PersistentVolumeSpec{
-			StorageClassName: "manual",
+			StorageClassName: storageClassName,
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: resource.MustParse("500Mi"),
+				corev1.ResourceStorage: g.parseResourceQuantity(pvStorageSize, constants.DefaultOpenShiftPVStorageSize),
 			},
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteMany,
-			},
+			AccessModes: accessModes,
 			// The HostPath must be nested inside the PersistentVolumeSource struct.
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/mnt/data",
+					Path: hostPath,
 				},
 			},
 		},
@@ -300,27 +731,26 @@ func (g *KruizeResourceGenerator) kruizeDBPersistentVolume() *corev1.PersistentV
 
 // kruizeDBPersistentVolumeClaim generates the PersistentVolumeClaim for the Kruize database.
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaim() *corev1.PersistentVolumeClaim {
-	storageClassName := "manual"
+	_, pvcStorageSize, storageClassName, _, accessModes := g.getPVConfig()
+	pvcName := g.getPVCName("kruize-db-pv-claim")
+	labels := g.getPVCLabels(map[string]string{"app": "kruize-db"})
+
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "PersistentVolumeClaim",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-db-pv-claim",
+			Name:      pvcName,
 			Namespace: g.Namespace,
-			Labels: map[string]string{
-				"app": "kruize-db",
-			},
+			Labels:    labels,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			StorageClassName: &storageClassName,
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteMany,
-			},
+			AccessModes:      accessModes,
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("500Mi"),
+					corev1.ResourceStorage: g.parseResourceQuantity(pvcStorageSize, constants.DefaultOpenShiftPVStorageSize),
 				},
 			},
 		},
@@ -468,34 +898,14 @@ func (g *KruizeResourceGenerator) kruizeDBDeployment() *appsv1.Deployment {
 								{Name: "POSTGRES_DB", Value: "kruizeDB"},
 								{Name: "PGDATA", Value: "/var/lib/pg_data"},
 							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("100Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.5"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("100Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.5"),
-								},
-							},
+							Resources: g.getDBResources(),
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: 5432},
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: "kruize-db-storage", MountPath: "/var/lib/pgsql/data"},
-							},
+							VolumeMounts: g.getDBVolumeMounts(),
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "kruize-db-storage",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "kruize-db-pv-claim",
-								},
-							},
-						},
-					},
+					Volumes: g.getDBVolumes(),
 				},
 			},
 		},
@@ -595,16 +1005,7 @@ func (g *KruizeResourceGenerator) kruizeDeployment() *appsv1.Deployment {
 								{Name: "KAFKA_RESPONSE_FILTER_INCLUDE", Value: "experiments|status|apis|recommendations|response|status_history"},
 								{Name: "KAFKA_RESPONSE_FILTER_EXCLUDE", Value: ""},
 							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("768Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.7"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("768Mi"),
-									corev1.ResourceCPU:    resource.MustParse("0.7"),
-								},
-							},
+							Resources: g.getKruizeResources(),
 							Ports: []corev1.ContainerPort{
 								{Name: "kruize-port", ContainerPort: 8080},
 							},
@@ -662,82 +1063,212 @@ func (g *KruizeResourceGenerator) kruizeService() *corev1.Service {
 	}
 }
 
+// getDefaultDatasource returns the default datasource based on cluster type.
+// OpenShift uses thanos-1, while other cluster types (minikube, kind) use prometheus-1.
+func (g *KruizeResourceGenerator) getDefaultDatasourceForOptimizer() string {
+	switch g.ClusterType {
+	case constants.ClusterTypeOpenShift:
+		return "thanos-1"
+	case constants.ClusterTypeMinikube, constants.ClusterTypeKind:
+		return "prometheus-1"
+	default:
+		// Log warning for unknown cluster type and fall back to prometheus-1
+		logger := log.FromContext(g.Ctx)
+		logger.Info("Unknown cluster type, defaulting to prometheus-1 datasource",
+			"clusterType", g.ClusterType)
+		return "prometheus-1"
+	}
+}
 
-func (g *KruizeResourceGenerator) kruizeUINginxPod() *corev1.Pod {
-	return &corev1.Pod{
-		// The TypeMeta tells the client which kind of object this is.
+// kruizeOptimizerDeployment generates the Deployment for the Kruize Optimizer.
+func (g *KruizeResourceGenerator) kruizeOptimizerDeployment() *appsv1.Deployment {
+	replicas := int32(1)
+
+	return &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Pod",
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
 		},
-		// The ObjectMeta contains the name, namespace, and labels.
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-ui-nginx-pod",
-			Namespace: g.Namespace, // We use the namespace from our generator struct.
+			Name:      "kruize-optimizer",
+			Namespace: g.Namespace,
 			Labels: map[string]string{
-				"app": "kruize-ui-nginx",
+				"app": "kruize-optimizer",
 			},
 		},
-		// The Spec defines the desired state of the Pod.
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:            "kruize-ui-nginx-container",
-					Image:           g.Autotune_ui_image,
-					ImagePullPolicy: corev1.PullAlways,
-					Env: []corev1.EnvVar{
-						{Name: "KRUIZE_API_URL", Value: "http://kruize:8080"},
-						{Name: "REACT_APP_KRUIZE_API_URL", Value: "http://kruize:8080"},
-						{Name: "KRUIZE_UI_API_URL", Value: "http://kruize:8080"},
-						{Name: "API_URL", Value: "http://kruize:8080"},
-						{Name: "KRUIZE_UI_ENV", Value: "production"},
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "nginx-config-volume",
-							MountPath: "/etc/nginx/nginx.conf",
-							SubPath:   "nginx.conf",
-						},
-						{
-							Name:      "nginx-cache",
-							MountPath: "/var/cache/nginx",
-						},
-						{Name: "nginx-pid", MountPath: "/var/run"},
-						{Name: "nginx-tmp", MountPath: "/tmp"},
-					},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: boolPtr(false),
-						RunAsNonRoot:             boolPtr(true),
-						RunAsUser:                int64Ptr(101),
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{"ALL"},
-						},
-						SeccompProfile: &corev1.SeccompProfile{
-							Type: corev1.SeccompProfileTypeRuntimeDefault,
-						},
-					},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "kruize-optimizer",
 				},
 			},
-			Volumes: []corev1.Volume{
-				{
-					Name: "nginx-config-volume",
-					VolumeSource: corev1.VolumeSource{
-						ConfigMap: &corev1.ConfigMapVolumeSource{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "nginx-config",
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "kruize-optimizer",
+					},
+				},
+				Spec: corev1.PodSpec{
+					// Init container to wait for Kruize deployment to be ready
+					InitContainers: []corev1.Container{
+						{
+							Name:  "wait-for-kruize",
+							Image: "busybox:1.36",
+							Command: []string{
+								"sh",
+								"-c",
+								`echo "Waiting for Kruize service to be ready...";
+								until wget -q -O- --timeout=5 http://kruize:8080/health >/dev/null 2>&1 || wget -q -O- --timeout=5 http://kruize:8080 >/dev/null 2>&1; do
+								echo "Kruize service not ready yet, waiting...";
+								sleep 5;
+								done;
+								echo "Kruize service is ready!";`,
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:            "kruize-optimizer",
+							Image:           g.Optimizer_image,
+							ImagePullPolicy: corev1.PullAlways,
+							Ports: []corev1.ContainerPort{
+								{ContainerPort: 8080},
+							},
+							Env: []corev1.EnvVar{
+								{Name: "KRUIZE_URL", Value: "http://kruize:8080"},
+								{Name: "KRUIZE_STATE_REFRESH_INTERVAL", Value: "60m"},
+								{Name: "KRUIZE_BULK_SCHEDULER_INTERVAL", Value: "15m"},
+								{Name: "KRUIZE_BULK_SCHEDULER_STARTUP_DELAY", Value: "1m"},
+								{Name: "KRUIZE_BULK_MEASUREMENT_DURATION", Value: "15min"},
+								{Name: "KRUIZE_WEBHOOK_URL", Value: "http://kruize-optimizer:8080/webhook"},
+								{Name: "KRUIZE_TARGET_LABEL_LIMIT", Value: "1"},
+								{Name: "KRUIZE_TARGET_LABELS", Value: `{"kruize/autotune": "enabled"}`},
+								{Name: "KRUIZE_DEFAULT_DATASOURCE", Value: g.getDefaultDatasourceForOptimizer()},
+								{Name: "KRUIZE_DEFAULT_METADATA_PROFILE", Value: "cluster-metadata-local-monitoring"},
+								{Name: "KRUIZE_DEFAULT_METRIC_PROFILE", Value: "resource-optimization-local-monitoring"},
 							},
 						},
 					},
 				},
-				// Define the emptyDir volume that will be used for caching.
+			},
+		},
+	}
+}
+
+// kruizeOptimizerService generates the Service for the Kruize Optimizer.
+func (g *KruizeResourceGenerator) kruizeOptimizerService() *corev1.Service {
+	return &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Service",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kruize-optimizer",
+			Namespace: g.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeClusterIP,
+			Selector: map[string]string{
+				"app": "kruize-optimizer",
+			},
+			Ports: []corev1.ServicePort{
 				{
-					Name: "nginx-cache",
-					VolumeSource: corev1.VolumeSource{
-						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					Name:       "http",
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+}
+
+func (g *KruizeResourceGenerator) kruizeUINginxDeployment() *appsv1.Deployment {
+	replicas := int32(1)
+	
+	// Build pod security context based on cluster type
+	podSecurityContext := &corev1.PodSecurityContext{
+		RunAsNonRoot: boolPtr(true),
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
+	}
+	
+	// Only set RunAsUser for non-OpenShift clusters
+	// OpenShift SCC will reject hardcoded UIDs and assign its own
+	if g.ClusterType != constants.ClusterTypeOpenShift {
+		podSecurityContext.RunAsUser = int64Ptr(101)
+	}
+	
+	return &appsv1.Deployment{
+		// The TypeMeta tells the client which kind of object this is.
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
+		},
+		// The ObjectMeta contains the name, namespace, and labels.
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kruize-ui-nginx",
+			Namespace: g.Namespace,
+			Labels: map[string]string{
+				"app": "kruize-ui-nginx",
+			},
+		},
+		// The Spec defines the desired state of the Deployment.
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Strategy: appsv1.DeploymentStrategy{
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+			},
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "kruize-ui-nginx",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": "kruize-ui-nginx",
 					},
 				},
-				{Name: "nginx-pid", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-				{Name: "nginx-tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+				Spec: corev1.PodSpec{
+					SecurityContext: podSecurityContext,
+					Containers: []corev1.Container{
+						{
+							Name:            "kruize-ui-nginx-container",
+							Image:           g.Autotune_ui_image,
+							ImagePullPolicy: corev1.PullAlways,
+							Env: []corev1.EnvVar{
+								{Name: "KRUIZE_UI_ENV", Value: "production"},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "nginx-config-volume",
+									MountPath: "/etc/nginx/nginx.conf",
+									SubPath:   "nginx.conf",
+								},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								AllowPrivilegeEscalation: boolPtr(false),
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{"ALL"},
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "nginx-config-volume",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: "nginx-config",
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 		},
 	}
@@ -747,27 +1278,34 @@ func (g *KruizeResourceGenerator) kruizeUINginxPod() *corev1.Pod {
 func (g *KruizeResourceGenerator) nginxConfigMap() *corev1.ConfigMap {
 	nginxConf := `
 events {}
+pid /tmp/nginx.pid;
 http {
-  upstream kruize-api {
-	server kruize:8080;
-  }
+	 client_body_temp_path /tmp/client_temp;
+	 proxy_temp_path /tmp/proxy_temp;
+	 fastcgi_temp_path /tmp/fastcgi_temp;
+	 uwsgi_temp_path /tmp/uwsgi_temp;
+	 scgi_temp_path /tmp/scgi_temp;
 
-  server {
-	listen 8080;
-	server_name localhost;
+	 upstream kruize-api {
+	   server kruize:8080;
+	 }
 
-	root   /usr/share/nginx/html;
+	 server {
+	   listen 8080;
+	   server_name localhost;
 
-	location ^~ /api/ {
-	  rewrite ^/api(.*)$ $1 break;
-	  proxy_pass http://kruize-api;
-	}
+	   root   /usr/share/nginx/html;
 
-	location / {
-	  index index.html;
-	  error_page 404 =200 /index.html;
-	}
-  }
+	   location ^~ /api/ {
+	     rewrite ^/api(.*)$ $1 break;
+	     proxy_pass http://kruize-api;
+	   }
+
+	   location / {
+	     index index.html;
+	     error_page 404 =200 /index.html;
+	   }
+	 }
 }
 `
 	return &corev1.ConfigMap{
@@ -855,7 +1393,6 @@ func (g *KruizeResourceGenerator) kruizeEditKOClusterRoleBinding() *rbacv1.Clust
 	}
 }
 
-
 // kruizeEditKOClusterRoleBindingKubernetes generates the ClusterRoleBinding for kruize-edit-ko
 func (g *KruizeResourceGenerator) kruizeEditKOClusterRoleBindingKubernetes() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
@@ -937,56 +1474,72 @@ func (g *KruizeResourceGenerator) instaslicesAccessClusterRoleBindingKubernetes(
 
 // kruizeDBPersistentVolumeKubernetes generates PV for Kind/Minikube/Kubernetes (different from OpenShift)
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeKubernetes() *corev1.PersistentVolume {
+	pvStorageSize, _, storageClassName, hostPath, accessModes := g.getPVConfigKubernetes()
+	pvName := g.getPVName("kruize-db-pv")
+	labels := g.getPVLabels(map[string]string{"app": "kruize-db"})
+
+	pvSpec := corev1.PersistentVolumeSpec{
+		Capacity: corev1.ResourceList{
+			corev1.ResourceStorage: g.parseResourceQuantity(pvStorageSize, constants.DefaultKubernetesPVStorageSize),
+		},
+		AccessModes:                   accessModes,
+		PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
+		PersistentVolumeSource: corev1.PersistentVolumeSource{
+			HostPath: &corev1.HostPathVolumeSource{
+				Path: hostPath,
+			},
+		},
+	}
+
+	// Only set StorageClassName if it's not empty
+	if storageClassName != "" {
+		pvSpec.StorageClassName = storageClassName
+	}
+
 	return &corev1.PersistentVolume{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "PersistentVolume",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-db-pv",
-			Namespace: g.Namespace,
-			Labels: map[string]string{
-				"app": "kruize-db",
-			},
+			Name:   pvName,
+			Labels: labels,
 		},
-		Spec: corev1.PersistentVolumeSpec{
-			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: resource.MustParse("1Gi"),
-			},
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteOnce,
-			},
-			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimRetain,
-			PersistentVolumeSource: corev1.PersistentVolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/data/postgres",
-				},
-			},
-		},
+		Spec: pvSpec,
 	}
 }
 
 // kruizeDBPersistentVolumeClaimKubernetes generates PVC for Kind/Minikube/Kubernetes
 func (g *KruizeResourceGenerator) kruizeDBPersistentVolumeClaimKubernetes() *corev1.PersistentVolumeClaim {
+	_, pvcStorageSize, storageClassName, _, accessModes := g.getPVConfigKubernetes()
+	pvcName := g.getPVCName("kruize-db-pvc")
+	labels := g.getPVCLabels(map[string]string{"app": "kruize-db"})
+
+	pvcSpec := corev1.PersistentVolumeClaimSpec{
+		AccessModes: accessModes,
+		Resources: corev1.VolumeResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceStorage: g.parseResourceQuantity(pvcStorageSize, constants.DefaultKubernetesPVStorageSize),
+			},
+		},
+	}
+
+	// Only set StorageClassName if it's not empty
+	if storageClassName != "" {
+		pvcSpec.StorageClassName = &storageClassName
+	}
+
 	return &corev1.PersistentVolumeClaim{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
 			Kind:       "PersistentVolumeClaim",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kruize-db-pvc",
+			Name:      pvcName,
 			Namespace: g.Namespace,
+			Labels:    labels,
 		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{
-				corev1.ReadWriteOnce,
-			},
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("1Gi"),
-				},
-			},
-		},
+		Spec: pvcSpec,
 	}
 }
 
@@ -1028,25 +1581,16 @@ func (g *KruizeResourceGenerator) kruizeDBDeploymentKubernetes() *appsv1.Deploym
 								{Name: "POSTGRES_PASSWORD", Value: "admin"},
 								{Name: "POSTGRES_USER", Value: "admin"},
 								{Name: "POSTGRES_DB", Value: "kruizeDB"},
+								{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},
 							},
+							Resources: g.getDBResources(),
 							Ports: []corev1.ContainerPort{
 								{ContainerPort: 5432},
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{Name: "kruize-db-storage", MountPath: "/var/lib/postgresql/data"},
-							},
+							VolumeMounts: g.getDBVolumeMountsKubernetes(),
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "kruize-db-storage",
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "kruize-db-pvc",
-								},
-							},
-						},
-					},
+					Volumes: g.getDBVolumesKubernetes(),
 				},
 			},
 		},
@@ -1195,6 +1739,7 @@ func (g *KruizeResourceGenerator) kruizeDeploymentKubernetes() *appsv1.Deploymen
 								{Name: "KAFKA_RESPONSE_FILTER_INCLUDE", Value: "summary"},
 								{Name: "KAFKA_RESPONSE_FILTER_EXCLUDE", Value: ""},
 							},
+							Resources: g.getKruizeResources(),
 							Ports: []corev1.ContainerPort{
 								{Name: "kruize-port", ContainerPort: 8080},
 							},
@@ -1441,7 +1986,6 @@ func (g *KruizeResourceGenerator) kruizeToPrometheusNetworkPolicy() *networkingv
 	}
 }
 
-
 // recommendationUpdaterClusterRoleBindingKubernetes generates the ClusterRoleBinding for the recommendation updater.
 func (g *KruizeResourceGenerator) recommendationUpdaterClusterRoleBindingKubernetes() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
@@ -1473,13 +2017,14 @@ func (g *KruizeResourceGenerator) KubernetesClusterScopedResources() []client.Ob
 		g.instaslicesAccessClusterRoleBindingKubernetes(),
 		g.kruizeEditKOClusterRoleBindingKubernetes(),
 		g.kruizeDBPersistentVolumeKubernetes(),
-		g.kruizeDBPersistentVolumeClaimKubernetes(),
 	}
 }
 
-// KubernetesNamespacedResources returns namespaced resources for Kind/minikube/Kubernetes
-func (g *KruizeResourceGenerator) KubernetesNamespacedResources() []client.Object {
+// CoreKubernetesNamespacedResources returns core Kruize resources for Kubernetes without optimizer.
+// Deploy these first and wait for Kruize to be ready before deploying optimizer.
+func (g *KruizeResourceGenerator) CoreKubernetesNamespacedResources() []client.Object {
 	return []client.Object{
+		g.kruizeDBPersistentVolumeClaimKubernetes(),
 		g.kruizeToPrometheusNetworkPolicy(),
 		g.kruizeDBDeploymentKubernetes(),
 		g.kruizeDBService(),
@@ -1489,7 +2034,16 @@ func (g *KruizeResourceGenerator) KubernetesNamespacedResources() []client.Objec
 		g.kruizeServiceMonitor(),
 		g.nginxConfigMap(),
 		g.kruizeUINginxService(),
-		g.kruizeUINginxPod(),
+		g.kruizeUINginxDeployment(),
 		g.deletePartitionCronJob(),
+	}
+}
+
+// OptimizerKubernetesNamespacedResources returns optimizer-specific resources for Kubernetes.
+// Deploy these after Kruize core is ready.
+func (g *KruizeResourceGenerator) OptimizerKubernetesNamespacedResources() []client.Object {
+	return []client.Object{
+		g.kruizeOptimizerDeployment(),
+		g.kruizeOptimizerService(),
 	}
 }
