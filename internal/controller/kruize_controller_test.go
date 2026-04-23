@@ -1523,5 +1523,432 @@ var _ = Describe("Kruize Controller", func() {
             })
         })
     })
+
+ // Finalizer Tests
+ Context("Finalizer Lifecycle", func() {
+ 	var (
+ 		kruizeName      string
+ 		kruizeNamespace string
+ 		kruize          *kruizev1alpha1.Kruize
+ 		reconciler      *KruizeReconciler
+ 		timeout         time.Duration
+ 		interval        time.Duration
+ 	)
+
+ 	BeforeEach(func() {
+ 		kruizeName = "test-kruize-finalizer"
+ 		kruizeNamespace = "default"
+ 		reconciler = &KruizeReconciler{
+ 			Client: k8sClient,
+ 			Scheme: k8sClient.Scheme(),
+ 		}
+ 		timeout = time.Second * 10
+ 		interval = time.Millisecond * 250
+ 	})
+
+ 	AfterEach(func() {
+			// Clean up the Kruize resource if it still exists
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+			if err == nil {
+				// Remove finalizers to allow deletion
+				kruize.SetFinalizers([]string{})
+				_ = k8sClient.Update(ctx, kruize)
+				_ = k8sClient.Delete(ctx, kruize)
+			}
+		})
+
+		Describe("Finalizer Addition", func() {
+			It("should add finalizer when Kruize CR is created", func() {
+				By("creating a new Kruize CR")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: constants.ClusterTypeOpenShift,
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("triggering reconciliation")
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying finalizer is added")
+				Eventually(func() []string {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					if err != nil {
+						return nil
+					}
+					return kruize.GetFinalizers()
+				}, timeout, interval).Should(ContainElement(kruizev1alpha1.KruizeFinalizer))
+			})
+
+			It("should be idempotent when finalizer already exists", func() {
+				By("creating a Kruize CR with finalizer already present")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       kruizeName,
+						Namespace:  kruizeNamespace,
+						Finalizers: []string{kruizev1alpha1.KruizeFinalizer},
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: constants.ClusterTypeOpenShift,
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("triggering reconciliation")
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying finalizer count remains 1")
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(kruize.GetFinalizers()).To(HaveLen(1))
+				Expect(kruize.GetFinalizers()[0]).To(Equal(kruizev1alpha1.KruizeFinalizer))
+			})
+		})
+
+		Describe("Finalizer Cleanup", func() {
+			It("should prevent immediate deletion when finalizer is present", func() {
+				By("creating a Kruize CR with finalizer")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       kruizeName,
+						Namespace:  kruizeNamespace,
+						Finalizers: []string{kruizev1alpha1.KruizeFinalizer},
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: constants.ClusterTypeOpenShift,
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("deleting the Kruize CR")
+				Expect(k8sClient.Delete(ctx, kruize)).To(Succeed())
+
+				By("verifying CR still exists with DeletionTimestamp set")
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					if err != nil {
+						return false
+					}
+					return kruize.GetDeletionTimestamp() != nil
+				}, timeout, interval).Should(BeTrue())
+
+				By("verifying finalizer is still present")
+				Expect(kruize.GetFinalizers()).To(ContainElement(kruizev1alpha1.KruizeFinalizer))
+			})
+
+			It("should remove finalizer after successful cleanup", func() {
+				By("creating a Kruize CR")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: constants.ClusterTypeOpenShift,
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("adding finalizer through reconciliation")
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying finalizer is added")
+				Eventually(func() []string {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					if err != nil {
+						return nil
+					}
+					return kruize.GetFinalizers()
+				}, timeout, interval).Should(ContainElement(kruizev1alpha1.KruizeFinalizer))
+
+				By("deleting the Kruize CR")
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(k8sClient.Delete(ctx, kruize)).To(Succeed())
+
+				By("triggering reconciliation to run cleanup")
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying CR is eventually deleted")
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					return err != nil
+				}, timeout, interval).Should(BeTrue())
+			})
+		})
+
+		Describe("Cluster-Scoped Resource Cleanup", func() {
+			It("should delete cluster-scoped resources during finalization for OpenShift", func() {
+				By("creating a Kruize CR for OpenShift")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: constants.ClusterTypeOpenShift,
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("adding finalizer")
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying finalizer is present")
+				Eventually(func() []string {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					if err != nil {
+						return nil
+					}
+					return kruize.GetFinalizers()
+				}, timeout, interval).Should(ContainElement(kruizev1alpha1.KruizeFinalizer))
+
+				By("deleting the Kruize CR to trigger cleanup")
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(k8sClient.Delete(ctx, kruize)).To(Succeed())
+
+				By("triggering reconciliation to run finalization")
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying CR is deleted after cleanup")
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					return err != nil
+				}, timeout, interval).Should(BeTrue())
+			})
+
+			It("should delete cluster-scoped resources during finalization for Kubernetes", func() {
+				By("creating a Kruize CR for Kubernetes")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: constants.ClusterTypeMinikube,
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("adding finalizer")
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying finalizer is present")
+				Eventually(func() []string {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					if err != nil {
+						return nil
+					}
+					return kruize.GetFinalizers()
+				}, timeout, interval).Should(ContainElement(kruizev1alpha1.KruizeFinalizer))
+
+				By("deleting the Kruize CR to trigger cleanup")
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(k8sClient.Delete(ctx, kruize)).To(Succeed())
+
+				By("triggering reconciliation to run finalization")
+				_, err = reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying CR is deleted after cleanup")
+				Eventually(func() bool {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					return err != nil
+				}, timeout, interval).Should(BeTrue())
+			})
+		})
+
+		Describe("Error Handling", func() {
+			It("should handle cleanup errors gracefully", func() {
+				By("creating a Kruize CR with invalid cluster type")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: "invalid-cluster",
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("attempting reconciliation")
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).To(HaveOccurred())
+
+				By("verifying finalizer was not added due to validation failure")
+				err = k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(kruize.GetFinalizers()).To(BeEmpty())
+			})
+
+			It("should validate cluster type before adding finalizer", func() {
+				By("creating a Kruize CR with valid cluster type")
+				kruize = &kruizev1alpha1.Kruize{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+					Spec: kruizev1alpha1.KruizeSpec{
+						Cluster_type: constants.ClusterTypeKind,
+						Namespace:    kruizeNamespace,
+					},
+				}
+				Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+				By("triggering reconciliation")
+				_, err := reconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Name:      kruizeName,
+						Namespace: kruizeNamespace,
+					},
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				By("verifying finalizer is added for valid cluster type")
+				Eventually(func() []string {
+					err := k8sClient.Get(ctx, types.NamespacedName{Name: kruizeName, Namespace: kruizeNamespace}, kruize)
+					if err != nil {
+						return nil
+					}
+					return kruize.GetFinalizers()
+				}, timeout, interval).Should(ContainElement(kruizev1alpha1.KruizeFinalizer))
+			})
+		})
+
+		Describe("Finalizer with Different Cluster Types", func() {
+			It("should handle finalizer for OpenShift cluster type", func() {
+				testFinalizerForClusterType(constants.ClusterTypeOpenShift, kruizeName, kruizeNamespace, reconciler, timeout, interval)
+			})
+
+			It("should handle finalizer for Minikube cluster type", func() {
+				testFinalizerForClusterType(constants.ClusterTypeMinikube, kruizeName+"-minikube", kruizeNamespace, reconciler, timeout, interval)
+			})
+
+			It("should handle finalizer for Kind cluster type", func() {
+				testFinalizerForClusterType(constants.ClusterTypeKind, kruizeName+"-kind", kruizeNamespace, reconciler, timeout, interval)
+			})
+		})
+	})
 })
 
+// Helper function to test finalizer for different cluster types
+func testFinalizerForClusterType(clusterType, name, namespace string, reconciler *KruizeReconciler, timeout, interval time.Duration) {
+	ctx := getTestContext()
+	
+	By(fmt.Sprintf("creating a Kruize CR for %s", clusterType))
+	kruize := &kruizev1alpha1.Kruize{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: kruizev1alpha1.KruizeSpec{
+			Cluster_type: clusterType,
+			Namespace:    namespace,
+		},
+	}
+	Expect(k8sClient.Create(ctx, kruize)).To(Succeed())
+
+	By("adding finalizer through reconciliation")
+	_, err := reconciler.Reconcile(ctx, reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		},
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	By("verifying finalizer is added")
+	Eventually(func() []string {
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, kruize)
+		if err != nil {
+			return nil
+		}
+		return kruize.GetFinalizers()
+	}, timeout, interval).Should(ContainElement(kruizev1alpha1.KruizeFinalizer))
+
+	By("deleting the Kruize CR")
+	err = k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, kruize)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(k8sClient.Delete(ctx, kruize)).To(Succeed())
+
+	By("triggering reconciliation to run cleanup")
+	_, err = reconciler.Reconcile(ctx, reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      name,
+			Namespace: namespace,
+		},
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	By("verifying CR is eventually deleted")
+	Eventually(func() bool {
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, kruize)
+		return err != nil
+	}, timeout, interval).Should(BeTrue())
+}
