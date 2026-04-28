@@ -2,7 +2,7 @@ module github.com/kruize/kruize-operator
 
 go 1.25.0
 
-toolchain go1.25.1
+toolchain go1.25.9
 
 require (
 	github.com/onsi/ginkgo/v2 v2.25.3
