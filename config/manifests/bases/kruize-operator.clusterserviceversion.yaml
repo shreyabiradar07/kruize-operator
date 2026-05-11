@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     categories: Monitoring, Developer Tools
-    containerImage: quay.io/kruize/kruize-operator:0.0.5
+    containerImage: quay.io/kruize/kruize-operator:0.0.6
     description: Resource optimization tool for Kubernetes workloads
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
@@ -102,6 +102,14 @@ spec:
     **Required Fields:**
     - **cluster_type**: Set to `"openshift"`, `"minikube"`, or `"kind"` based on your environment
     - **namespace**: Namespace where Kruize components will be deployed
+
+    **Optional Fields (for minikube/kind clusters):**
+    - **kruize.resources**: Resource limits and requests for Kruize container
+    - **kruize-db.resources**: Resource limits and requests for Kruize database container
+    - **persistentVolume**: PersistentVolume configuration for database storage
+    - **persistentVolumeClaim**: PersistentVolumeClaim configuration for database storage
+
+    Note: Resource configurations, PersistentVolume, and PersistentVolumeClaim can be omitted for minikube/kind clusters for local development.
 
     ### Recommended Namespaces
     - **OpenShift clusters**: Use **openshift-tuning** namespace
