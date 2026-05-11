@@ -15,7 +15,7 @@ metadata:
             "name": "kruize-sample"
           },
           "spec": {
-            "autotune_image": "quay.io/kruize/autotune_operator:0.9",
+            "autotune_image": "quay.io/kruize/autotune_operator:0.10",
             "autotune_ui_image": "quay.io/kruize/kruize-ui:0.1.0",
             "cluster_type": "openshift",
             "kruize": {
@@ -95,14 +95,14 @@ metadata:
       ]
     capabilities: Basic Install
     categories: Monitoring, Developer Tools
-    containerImage: quay.io/kruize/kruize-operator:0.0.5
-    createdAt: "2026-04-14T10:36:45Z"
+    containerImage: quay.io/kruize/kruize-operator:0.0.6
+    createdAt: "2026-05-11T11:14:38Z"
     description: Resource optimization tool for Kubernetes workloads
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
     repository: https://github.com/kruize/kruize-operator
     support: Kruize Community
-  name: kruize-operator.v0.0.5
+  name: kruize-operator.v0.0.6
   namespace: placeholder
 spec:
   apiservicedefinitions: {}
@@ -194,13 +194,15 @@ spec:
     - **cluster_type**: Set to `"openshift"`, `"minikube"`, or `"kind"` based on your environment
     - **namespace**: Namespace where Kruize components will be deployed
 
-    **Optional Fields (for minikube/kind clusters):**
+    **Optional resource and storage fields (applicable to all cluster types):**
     - **kruize.resources**: Resource limits and requests for Kruize container
     - **kruize-db.resources**: Resource limits and requests for Kruize database container
     - **persistentVolume**: PersistentVolume configuration for database storage
     - **persistentVolumeClaim**: PersistentVolumeClaim configuration for database storage
 
-    Note: Resource configurations, PersistentVolume, and PersistentVolumeClaim can be omitted for minikube/kind clusters for local development.
+    Note: For local development on **minikube/kind** clusters, these resource configurations, PersistentVolume, and
+    PersistentVolumeClaim can be omitted. For other environments (including **OpenShift**) and non-local/minikube/kind
+    setups, configuring these fields is recommended.
 
     ### Recommended Namespaces
     - **OpenShift clusters**: Use **openshift-tuning** namespace
@@ -619,7 +621,7 @@ spec:
                 - --metrics-bind-address=:8443
                 command:
                 - /app/manager
-                image: quay.io/kruize/kruize-operator:0.0.5
+                image: quay.io/kruize/kruize-operator:0.0.6
                 livenessProbe:
                   httpGet:
                     path: /healthz
@@ -723,4 +725,4 @@ spec:
   minKubeVersion: 1.23.0
   provider:
     name: Kruize
-  version: 0.0.5
+  version: 0.0.6
