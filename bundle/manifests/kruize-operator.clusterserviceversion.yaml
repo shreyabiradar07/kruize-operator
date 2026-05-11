@@ -194,13 +194,15 @@ spec:
     - **cluster_type**: Set to `"openshift"`, `"minikube"`, or `"kind"` based on your environment
     - **namespace**: Namespace where Kruize components will be deployed
 
-    **Optional Fields (for minikube/kind clusters):**
+    **Optional resource and storage fields (applicable to all cluster types):**
     - **kruize.resources**: Resource limits and requests for Kruize container
     - **kruize-db.resources**: Resource limits and requests for Kruize database container
     - **persistentVolume**: PersistentVolume configuration for database storage
     - **persistentVolumeClaim**: PersistentVolumeClaim configuration for database storage
 
-    Note: Resource configurations, PersistentVolume, and PersistentVolumeClaim can be omitted for minikube/kind clusters for local development.
+    Note: For local development on **minikube/kind** clusters, these resource configurations, PersistentVolume, and
+    PersistentVolumeClaim can be omitted. For other environments (including **OpenShift**) and non-local/minikube/kind
+    setups, configuring these fields is recommended.
 
     ### Recommended Namespaces
     - **OpenShift clusters**: Use **openshift-tuning** namespace
