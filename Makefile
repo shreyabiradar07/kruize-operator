@@ -54,6 +54,19 @@ IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.29.0
 
+# Host platform detection for downloading platform-specific binaries.
+HOST_OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+HOST_ARCH_RAW := $(shell uname -m)
+ifeq ($(HOST_ARCH_RAW),x86_64)
+HOST_ARCH := amd64
+else ifeq ($(HOST_ARCH_RAW),aarch64)
+HOST_ARCH := arm64
+else ifeq ($(HOST_ARCH_RAW),arm64)
+HOST_ARCH := arm64
+else
+HOST_ARCH := $(HOST_ARCH_RAW)
+endif
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -244,6 +257,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
 ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
+OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk-$(OPERATOR_SDK_VERSION)-$(HOST_OS)-$(HOST_ARCH)
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.3.0
@@ -285,25 +299,12 @@ mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
 }
 endef
 
-# Check if operator-sdk exists system-wide first, otherwise use local bin
-ifeq (,$(shell which operator-sdk 2>/dev/null))
-OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk
-else
-OPERATOR_SDK ?= $(shell which operator-sdk)
-endif
-
 .PHONY: operator-sdk
-operator-sdk: ## Download operator-sdk locally if necessary.
-	@if [ ! -f $(OPERATOR_SDK) ]; then \
-		if [ "$(OPERATOR_SDK)" = "$(LOCALBIN)/operator-sdk" ]; then \
-			echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION)..." ;\
-			mkdir -p $(LOCALBIN) ;\
-			OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
-			case $$ARCH in \
-				x86_64) ARCH=amd64 ;; \
-				aarch64) ARCH=arm64 ;; \
-			esac ;\
-			curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
+operator-sdk: $(OPERATOR_SDK) ## Download operator-sdk locally if necessary.
+
+$(OPERATOR_SDK): $(LOCALBIN)
+	@echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION) for $(HOST_OS)/$(HOST_ARCH)..."
+	@curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$(HOST_OS)_$(HOST_ARCH) ;\
 			chmod +x $(OPERATOR_SDK) ;\
 			echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
 		else \
