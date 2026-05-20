@@ -257,6 +257,8 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
 ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
+# OPERATOR_SDK is managed under $(LOCALBIN) and may be (re)downloaded by `make operator-sdk`.
+# Overriding OPERATOR_SDK to a system-wide path can result in that path being overwritten.
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk-$(OPERATOR_SDK_VERSION)-$(HOST_OS)-$(HOST_ARCH)
 
 ## Tool Versions
@@ -302,19 +304,22 @@ endef
 .PHONY: operator-sdk
 operator-sdk: $(OPERATOR_SDK) ## Download operator-sdk locally if necessary.
 
+# Only define the download rule if OPERATOR_SDK is under LOCALBIN to avoid overwriting system-wide installations
+ifeq ($(findstring $(LOCALBIN),$(OPERATOR_SDK)),$(LOCALBIN))
 $(OPERATOR_SDK): $(LOCALBIN)
 	@echo "Downloading operator-sdk $(OPERATOR_SDK_VERSION) for $(HOST_OS)/$(HOST_ARCH)..."
-	@curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$(HOST_OS)_$(HOST_ARCH) ;\
-			chmod +x $(OPERATOR_SDK) ;\
-			echo "operator-sdk downloaded to $(OPERATOR_SDK)" ;\
-		else \
-			echo "Error: Custom OPERATOR_SDK path '$(OPERATOR_SDK)' does not exist." ;\
-			echo "Please ensure the binary exists at the specified path or use the default location." ;\
-			exit 1 ;\
-		fi ;\
-	else \
-		echo "Using operator-sdk: $(OPERATOR_SDK)" ;\
+	@curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$(HOST_OS)_$(HOST_ARCH)
+	@chmod +x $(OPERATOR_SDK)
+	@echo "operator-sdk downloaded to $(OPERATOR_SDK)"
+else
+$(OPERATOR_SDK):
+	@echo "Using system operator-sdk at: $(OPERATOR_SDK)"
+	@if [ ! -f "$(OPERATOR_SDK)" ]; then \
+		echo "Error: OPERATOR_SDK path '$(OPERATOR_SDK)' does not exist."; \
+		echo "Please ensure the binary exists at the specified path or use the default location."; \
+		exit 1; \
 	fi
+endif
 
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
