@@ -53,17 +53,18 @@ These environment variables are checked once at operator startup. When the opera
 
 The `FINALIZER_TIMEOUT_SECONDS` environment variable controls how long the operator waits for resource cleanup operations during CR deletion. This prevents the controller from hanging indefinitely due to network issues or API server problems.
 
+To configure this, set the environment variable before deploying the operator:
+
 ```sh
 # Set a custom timeout of 60 seconds for finalizer operations
 export FINALIZER_TIMEOUT_SECONDS=60
+make deploy IMG=<registry>/kruize-operator:tag
 ```
 
-To configure this in the operator deployment, edit [`config/manager/manager.yaml`](config/manager/manager.yaml) and uncomment the environment variable:
+Or add it to the operator deployment after installation by editing the deployment:
 
-```yaml
-env:
-- name: FINALIZER_TIMEOUT_SECONDS
-  value: "60"
+```sh
+kubectl set env deployment/kruize-operator -n <namespace> FINALIZER_TIMEOUT_SECONDS=60
 ```
 
 **When to adjust the timeout:**

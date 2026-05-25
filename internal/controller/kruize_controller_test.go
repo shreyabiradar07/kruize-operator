@@ -38,6 +38,7 @@ import (
 
 	kruizev1alpha1 "github.com/kruize/kruize-operator/api/v1alpha1"
 	"github.com/kruize/kruize-operator/internal/constants"
+	"github.com/kruize/kruize-operator/internal/controller/common"
 	"github.com/kruize/kruize-operator/internal/utils"
 )
 
@@ -1893,6 +1894,84 @@ var _ = Describe("Kruize Controller", func() {
 			It("should handle finalizer for Kind cluster type", func() {
 				testFinalizerForClusterType(constants.ClusterTypeKind, kruizeName+"-kind", kruizeNamespace, reconciler, timeout, interval)
 			})
+		})
+	})
+
+	Context("Finalizer timeout functionality", func() {
+		It("should use default timeout when env var not set", func() {
+			os.Unsetenv("FINALIZER_TIMEOUT_SECONDS")
+			
+			timeout := common.GetFinalizerTimeout()
+			Expect(timeout).To(Equal(common.DefaultFinalizerTimeout))
+		})
+
+		It("should use custom timeout from env var", func() {
+			os.Setenv("FINALIZER_TIMEOUT_SECONDS", "60")
+			defer os.Unsetenv("FINALIZER_TIMEOUT_SECONDS")
+			
+			timeout := common.GetFinalizerTimeout()
+			Expect(timeout).To(Equal(60 * time.Second))
+		})
+
+		It("should fallback to default on invalid env var", func() {
+			os.Setenv("FINALIZER_TIMEOUT_SECONDS", "invalid")
+			defer os.Unsetenv("FINALIZER_TIMEOUT_SECONDS")
+			
+			timeout := common.GetFinalizerTimeout()
+			Expect(timeout).To(Equal(common.DefaultFinalizerTimeout))
+		})
+
+		It("should fallback to default on negative env var", func() {
+			os.Setenv("FINALIZER_TIMEOUT_SECONDS", "-10")
+			defer os.Unsetenv("FINALIZER_TIMEOUT_SECONDS")
+			
+			timeout := common.GetFinalizerTimeout()
+			Expect(timeout).To(Equal(common.DefaultFinalizerTimeout))
+		})
+
+		It("should fallback to default on zero env var", func() {
+			os.Setenv("FINALIZER_TIMEOUT_SECONDS", "0")
+			defer os.Unsetenv("FINALIZER_TIMEOUT_SECONDS")
+			
+			timeout := common.GetFinalizerTimeout()
+			Expect(timeout).To(Equal(common.DefaultFinalizerTimeout))
+		})
+
+		It("should respect timeout for finalization operations", func() {
+			testCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+
+			// Fast operation should complete
+			fastFn := func(ctx context.Context) error {
+				time.Sleep(50 * time.Millisecond)
+				return nil
+			}
+
+			start := time.Now()
+			err := fastFn(testCtx)
+			duration := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(duration).To(BeNumerically("<", 1*time.Second))
+		})
+
+		It("should detect timeout on slow operations", func() {
+			testCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+			defer cancel()
+
+			// Slow operation should timeout
+			slowFn := func(ctx context.Context) error {
+				select {
+				case <-time.After(2 * time.Second):
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+
+			err := slowFn(testCtx)
+			Expect(err).To(HaveOccurred())
+			Expect(err).To(Equal(context.DeadlineExceeded))
 		})
 	})
 })

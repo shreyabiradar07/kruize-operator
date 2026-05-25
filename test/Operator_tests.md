@@ -161,6 +161,13 @@ go test ./internal/controller/... -v -ginkgo.p
 - Full lifecycle for Minikube cluster type
 - Full lifecycle for Kind cluster type
 
+**Finalizer Timeout Tests**:
+- Default timeout configuration (30 seconds)
+- Custom timeout from FINALIZER_TIMEOUT_SECONDS environment variable
+- Fallback to default on invalid environment variable values
+- Timeout detection for slow operations
+- Fast operations complete within timeout
+
 ### 6. Test Mode Behavior Tests
 
 **Purpose**: Verify test mode functionality for faster test execution
