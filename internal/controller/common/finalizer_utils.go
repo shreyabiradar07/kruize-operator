@@ -19,11 +19,27 @@ package common
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
+	"time"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// DefaultFinalizerTimeout prevents controller hangs during cleanup (configurable via FINALIZER_TIMEOUT_SECONDS env var)
+const DefaultFinalizerTimeout = 30 * time.Second
+
+// GetFinalizerTimeout returns timeout from FINALIZER_TIMEOUT_SECONDS env var or default
+func GetFinalizerTimeout() time.Duration {
+	if timeoutStr := os.Getenv("FINALIZER_TIMEOUT_SECONDS"); timeoutStr != "" {
+		if seconds, err := strconv.Atoi(timeoutStr); err == nil && seconds > 0 {
+			return time.Duration(seconds) * time.Second
+		}
+	}
+	return DefaultFinalizerTimeout
+}
 
 // AddFinalizer adds the provided finalizer to the object and updates it in the cluster.
 // This function ensures idempotency - if the finalizer already exists, no update is performed.
@@ -85,7 +101,7 @@ func IsBeingDeleted(obj client.Object) bool {
 	return obj.GetDeletionTimestamp() != nil
 }
 
-// HandleFinalizer is a convenience function that manages the complete finalizer lifecycle.
+// HandleFinalizer is a helper function that manages the complete finalizer lifecycle.
 // It adds the finalizer if the object is not being deleted, or runs finalization logic
 // and removes the finalizer if the object is being deleted.
 //
@@ -99,33 +115,52 @@ func IsBeingDeleted(obj client.Object) bool {
 // Returns:
 //   - needsRequeue: true if the reconciliation should be requeued
 //   - err: any error that occurred
-func HandleFinalizer(ctx context.Context, client client.Client, obj client.Object, 
+func HandleFinalizer(ctx context.Context, client client.Client, obj client.Object,
 	finalizer string, finalizeFn func(context.Context) error) (needsRequeue bool, err error) {
+	return HandleFinalizerWithTimeout(ctx, client, obj, finalizer, finalizeFn, GetFinalizerTimeout())
+}
+
+
+// HandleFinalizerWithTimeout manages finalizer lifecycle with custom timeout
+func HandleFinalizerWithTimeout(ctx context.Context, client client.Client, obj client.Object,
+	finalizer string, finalizeFn func(context.Context) error, timeout time.Duration) (needsRequeue bool, err error) {
 	
 	log := log.FromContext(ctx)
 	
 	// Check if the object is being deleted
 	if IsBeingDeleted(obj) {
 		if HasFinalizer(obj, finalizer) {
-			// Run finalization logic
-			log.Info("object is being deleted, running finalization logic", 
-				"namespace", obj.GetNamespace(), "name", obj.GetName())
+			// Run finalization logic with custom timeout
+			log.Info("object is being deleted, running finalization logic with custom timeout",
+				"namespace", obj.GetNamespace(), "name", obj.GetName(),
+				"timeout", timeout)
 			
-			if err := finalizeFn(ctx); err != nil {
-				log.Error(err, "failed to finalize object", 
+			// Create a timeout context for finalization
+			finalizationCtx, cancel := context.WithTimeout(ctx, timeout)
+			defer cancel()
+			
+			if err := finalizeFn(finalizationCtx); err != nil {
+				// Check if the error is due to timeout
+				if finalizationCtx.Err() == context.DeadlineExceeded {
+					log.Error(err, "finalization timed out, will retry",
+						"namespace", obj.GetNamespace(), "name", obj.GetName(),
+						"timeout", timeout)
+					return false, fmt.Errorf("finalization timed out after %v: %w", timeout, err)
+				}
+				log.Error(err, "failed to finalize object",
 					"namespace", obj.GetNamespace(), "name", obj.GetName())
-				// Return error to retry finalization
+
 				return false, fmt.Errorf("failed to finalize object: %w", err)
 			}
 			
 			// Remove finalizer to allow deletion
 			if err := RemoveFinalizer(ctx, client, obj, finalizer); err != nil {
-				log.Error(err, "failed to remove finalizer after finalization", 
+				log.Error(err, "failed to remove finalizer after finalization",
 					"namespace", obj.GetNamespace(), "name", obj.GetName())
 				return false, err
 			}
 			
-			log.Info("finalization complete, object can now be deleted", 
+			log.Info("finalization complete, object can now be deleted",
 				"namespace", obj.GetNamespace(), "name", obj.GetName())
 		}
 		// Object is being deleted and finalizer is removed (or was never present)
@@ -136,7 +171,7 @@ func HandleFinalizer(ctx context.Context, client client.Client, obj client.Objec
 	// Object is not being deleted, ensure finalizer is present
 	if !HasFinalizer(obj, finalizer) {
 		if err := AddFinalizer(ctx, client, obj, finalizer); err != nil {
-			log.Error(err, "failed to add finalizer", 
+			log.Error(err, "failed to add finalizer",
 				"namespace", obj.GetNamespace(), "name", obj.GetName())
 			return false, err
 		}

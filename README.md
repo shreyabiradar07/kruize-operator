@@ -32,15 +32,15 @@ For examples of running Kruize and the operator, see [kruize-demos](https://gith
 
 **Environment Variables:**
 
-The operator supports the following environment variables for customizing default container images:
+The operator supports the following environment variables for configuration:
 
-| Variable | Description |
-|----------|-------------|
-| `DEFAULT_AUTOTUNE_IMAGE` | Override the default Kruize Autotune container image |
-| `DEFAULT_AUTOTUNE_UI_IMAGE` | Override the default Kruize UI container image |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DEFAULT_AUTOTUNE_IMAGE` | Override the default Kruize Autotune container image | Built-in default |
+| `DEFAULT_AUTOTUNE_UI_IMAGE` | Override the default Kruize UI container image | Built-in default |
+| `FINALIZER_TIMEOUT_SECONDS` | Timeout for finalizer cleanup operations (in seconds) | `30` |
 
-
-**Example Usage:**
+**Image Configuration Example:**
 ```sh
 # Use custom registry/versions
 export DEFAULT_AUTOTUNE_IMAGE="my-registry.io/kruize/autotune_operator:custom-tag"
@@ -48,6 +48,28 @@ export DEFAULT_AUTOTUNE_UI_IMAGE="my-registry.io/kruize/kruize-ui:custom-tag"
 ```
 
 These environment variables are checked once at operator startup. When the operator creates Kruize resources with empty `autotune_image` or `autotune_ui_image` fields in the CR spec, it uses these environment variable values (if set) or the built-in defaults. If the CR explicitly specifies image values, those take precedence over environment variables.
+
+**Finalizer Timeout Configuration:**
+
+The `FINALIZER_TIMEOUT_SECONDS` environment variable controls how long the operator waits for resource cleanup operations during CR deletion. This prevents the controller from hanging indefinitely due to network issues or API server problems.
+
+```sh
+# Set a custom timeout of 60 seconds for finalizer operations
+export FINALIZER_TIMEOUT_SECONDS=60
+```
+
+To configure this in the operator deployment, edit [`config/manager/manager.yaml`](config/manager/manager.yaml) and uncomment the environment variable:
+
+```yaml
+env:
+- name: FINALIZER_TIMEOUT_SECONDS
+  value: "60"
+```
+
+**When to adjust the timeout:**
+- Increase if you have many cluster-scoped resources that take longer to clean up
+- Increase if you experience network latency issues
+- Decrease for faster failure detection in development environments
 
 ### Deployment
 
