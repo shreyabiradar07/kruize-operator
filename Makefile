@@ -253,10 +253,10 @@ $(LOCALBIN):
 
 ## Tool Binaries
 KUBECTL ?= kubectl
-KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)
-ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
+KUSTOMIZE ?= $(LOCALBIN)/kustomize-$(KUSTOMIZE_VERSION)-$(HOST_OS)-$(HOST_ARCH)
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen-$(CONTROLLER_TOOLS_VERSION)-$(HOST_OS)-$(HOST_ARCH)
+ENVTEST ?= $(LOCALBIN)/setup-envtest-$(ENVTEST_VERSION)-$(HOST_OS)-$(HOST_ARCH)
+GOLANGCI_LINT = $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(HOST_OS)-$(HOST_ARCH)
 # OPERATOR_SDK is managed under $(LOCALBIN) and may be (re)downloaded by `make operator-sdk`.
 # Overriding OPERATOR_SDK to a system-wide path can result in that path being overwritten.
 OPERATOR_SDK ?= $(LOCALBIN)/operator-sdk-$(OPERATOR_SDK_VERSION)-$(HOST_OS)-$(HOST_ARCH)
@@ -288,16 +288,17 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,${GOLANGCI_LINT_VERSION})
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
-# $1 - target path with name of binary (ideally with version)
+# $1 - target path with name of binary (ideally with version-os-arch)
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
 @[ -f $(1) ] || { \
 set -e; \
 package=$(2)@$(3) ;\
-echo "Downloading $${package}" ;\
+echo "Downloading $${package} for $(HOST_OS)/$(HOST_ARCH)" ;\
 GOBIN=$(LOCALBIN) go install $${package} ;\
-mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
+binary_name=$$(basename $(2)) ;\
+[ -f "$(LOCALBIN)/$${binary_name}" ] && mv "$(LOCALBIN)/$${binary_name}" $(1) || true ;\
 }
 endef
 
