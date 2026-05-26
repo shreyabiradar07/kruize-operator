@@ -276,18 +276,18 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
-@if [ -f $(1) ]; then \
-        if ! $(1) --version >/dev/null 2>&1; then \
+@if [ -f "$(1)" ]; then \
+        if ! "$(1)" --version >/dev/null 2>&1; then \
                 echo "Existing binary $(1) is not executable on this platform, re-downloading.." ;\
-                rm -f $(1) ;\
+                rm -f "$(1)" ;\
         fi ;\
 fi ;\
-if [ ! -f $(1) ]; then \
+if [ ! -f "$(1)" ]; then \
         set -e; \
         package=$(2)@$(3) ;\
         echo "Downloading $${package}" ;\
         GOBIN=$(LOCALBIN) go install $${package} ;\
-        mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
+        mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" "$(1)" ;\
 fi
 endef
 
