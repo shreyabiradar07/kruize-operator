@@ -276,13 +276,19 @@ $(GOLANGCI_LINT): $(LOCALBIN)
 # $2 - package url which can be installed
 # $3 - specific version of package
 define go-install-tool
-@[ -f $(1) ] || { \
-set -e; \
-package=$(2)@$(3) ;\
-echo "Downloading $${package}" ;\
-GOBIN=$(LOCALBIN) go install $${package} ;\
-mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
-}
+@if [ -f $(1) ]; then \
+        if ! $(1) --version >/dev/null 2>&1; then \
+                echo "Existing binary $(1) is not executable on this platform, re-downloading.." ;\
+                rm -f $(1) ;\
+        fi ;\
+fi ;\
+if [ ! -f $(1) ]; then \
+        set -e; \
+        package=$(2)@$(3) ;\
+        echo "Downloading $${package}" ;\
+        GOBIN=$(LOCALBIN) go install $${package} ;\
+        mv "$$(echo "$(1)" | sed "s/-$(3)$$//")" $(1) ;\
+fi
 endef
 
 # Check if operator-sdk exists system-wide first, otherwise use local bin
@@ -301,7 +307,7 @@ operator-sdk: ## Download operator-sdk locally if necessary.
 			OS=$$(uname -s | tr '[:upper:]' '[:lower:]') && ARCH=$$(uname -m) ;\
 			case $$ARCH in \
 				x86_64) ARCH=amd64 ;; \
-				aarch64) ARCH=arm64 ;; \
+				aarch64|arm64) ARCH=arm64 ;; \
 			esac ;\
 			curl -sSLo $(OPERATOR_SDK) https://github.com/operator-framework/operator-sdk/releases/download/$(OPERATOR_SDK_VERSION)/operator-sdk_$${OS}_$${ARCH} ;\
 			chmod +x $(OPERATOR_SDK) ;\
