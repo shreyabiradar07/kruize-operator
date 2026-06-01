@@ -143,18 +143,18 @@ func (r *KruizeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		func(ctx context.Context) error {
 			return r.finalizeKruize(ctx, kruize)
 		})
-	
+
 	if err != nil {
 		logger.Error(err, "Failed to handle finalizer")
 		return ctrl.Result{}, err
 	}
-	
+
 	if needsRequeue {
 		// Finalizer was just added, requeue to ensure it's persisted
 		logger.Info("Finalizer added, requeuing")
 		return ctrl.Result{Requeue: true}, nil
 	}
-	
+
 	// If object is being deleted, HandleFinalizer has already handled it
 	if common.IsBeingDeleted(kruize) {
 		return ctrl.Result{}, nil
@@ -220,7 +220,7 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 	// these resources via garbage collection when the Kruize CR is deleted.
 	// We only need to explicitly delete cluster-scoped resources, which cannot have
 	// OwnerReferences due to Kubernetes limitations.
-	
+
 	logger.Info("Namespace-scoped resources will be automatically deleted by Kubernetes garbage collection via OwnerReferences")
 
 	// List of cluster-scoped resources to delete
@@ -233,8 +233,22 @@ func (r *KruizeReconciler) finalizeKruize(ctx context.Context, kruize *kruizev1a
 
 	// Delete each cluster-scoped resource (these cannot have OwnerReferences)
 	logger.Info("Deleting cluster-scoped resources", "count", len(clusterScopedResources))
-	
+
 	for _, obj := range clusterScopedResources {
+		// Check if context has been cancelled or timed out before each deletion
+		select {
+		case <-ctx.Done():
+			// Context cancelled or timed out
+			err := ctx.Err()
+			logger.Error(err, "Context cancelled during finalization, stopping cleanup",
+				"successful", successCount,
+				"failed", failCount,
+				"remaining", len(clusterScopedResources)-(successCount+failCount))
+			return fmt.Errorf("finalization cancelled after deleting %d resources: %w", successCount, err)
+		default:
+			// Context still valid, proceed with deletion
+		}
+
 		if err := r.deleteResource(ctx, obj); err != nil {
 			logger.Error(err, "Failed to delete cluster-scoped resource",
 				"Kind", obj.GetObjectKind().GroupVersionKind().Kind,
@@ -357,7 +371,6 @@ func (r *KruizeReconciler) waitForKruizePods(ctx context.Context, namespace stri
 		}
 	}
 }
-
 
 func (r *KruizeReconciler) checkKruizePodsStatus(ctx context.Context, namespace string) (int, int, map[string]string, error) {
 	podList := &corev1.PodList{}
