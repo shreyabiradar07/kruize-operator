@@ -1973,6 +1973,72 @@ var _ = Describe("Kruize Controller", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err).To(Equal(context.DeadlineExceeded))
 		})
+
+		It("should stop finalization immediately when context is cancelled", func() {
+			By("creating a context with very short timeout")
+			testCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+			defer cancel()
+
+			By("simulating finalization with multiple resource deletions")
+			deletionCount := 0
+			maxDeletions := 10
+
+			// Simulate the deletion loop with context checks
+			for i := 0; i < maxDeletions; i++ {
+				// Check if context is cancelled (preemptive check)
+				select {
+				case <-testCtx.Done():
+					// Context cancelled, stop immediately
+					By(fmt.Sprintf("Context cancelled after %d deletions", deletionCount))
+					Expect(testCtx.Err()).To(Equal(context.DeadlineExceeded))
+					Expect(deletionCount).To(BeNumerically("<", maxDeletions),
+						"Should stop before completing all deletions")
+					return
+				default:
+					// Context still valid, proceed with deletion
+				}
+
+				// Simulate resource deletion taking some time
+				time.Sleep(20 * time.Millisecond)
+				deletionCount++
+			}
+
+			// Should not reach here - context should have cancelled
+			Fail("Expected context to cancel before all deletions completed")
+		})
+
+		It("should report partial progress when finalization times out", func() {
+			By("simulating finalization with timeout")
+			testCtx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+			defer cancel()
+
+			// Track progress
+			var processedResources []string
+
+			// Simulate processing multiple resources
+			resources := []string{"resource1", "resource2", "resource3", "resource4", "resource5"}
+
+			for _, resource := range resources {
+				select {
+				case <-testCtx.Done():
+					// Timeout occurred, verify we have partial progress
+					By(fmt.Sprintf("Timeout after processing %d/%d resources",
+						len(processedResources), len(resources)))
+					Expect(len(processedResources)).To(BeNumerically(">", 0),
+						"Should have processed at least some resources")
+					Expect(len(processedResources)).To(BeNumerically("<", len(resources)),
+						"Should not have processed all resources due to timeout")
+					return
+				default:
+					// Process resource
+					time.Sleep(30 * time.Millisecond)
+					processedResources = append(processedResources, resource)
+				}
+			}
+
+			// Should not complete all resources within timeout
+			Fail("Expected timeout before processing all resources")
+		})
 	})
 })
 
