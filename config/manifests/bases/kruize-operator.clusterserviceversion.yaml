@@ -5,7 +5,7 @@ metadata:
     alm-examples: '[]'
     capabilities: Basic Install
     categories: Monitoring, Developer Tools
-    containerImage: quay.io/kruize/kruize-operator:0.0.4
+    containerImage: quay.io/kruize/kruize-operator:0.0.6
     description: Resource optimization tool for Kubernetes workloads
     operators.operatorframework.io/builder: operator-sdk-v1.37.0
     operators.operatorframework.io/project_layout: go.kubebuilder.io/v4
@@ -68,6 +68,11 @@ spec:
         path: namespace
         x-descriptors:
         - urn:alm:descriptor:com.tectonic.ui:text
+      - description: Container image for Kruize Optimizer
+        displayName: Optimizer Image
+        path: optimizer_image
+        x-descriptors:
+        - urn:alm:descriptor:com.tectonic.ui:text
       version: v1alpha1
   description: |
     Kruize is resource optimization tool for Kubernetes that helps you achieve significant cost
@@ -97,6 +102,16 @@ spec:
     **Required Fields:**
     - **cluster_type**: Set to `"openshift"`, `"minikube"`, or `"kind"` based on your environment
     - **namespace**: Namespace where Kruize components will be deployed
+
+    **Optional resource and storage fields (applicable to all cluster types):**
+    - **kruize.resources**: Resource limits and requests for Kruize container
+    - **kruize-db.resources**: Resource limits and requests for Kruize database container
+    - **persistentVolume**: PersistentVolume configuration for database storage
+    - **persistentVolumeClaim**: PersistentVolumeClaim configuration for database storage
+
+    Note: For local development on **minikube/kind** clusters, these resource configurations, PersistentVolume, and
+    PersistentVolumeClaim can be omitted. For other environments (including **OpenShift**) and non-local/minikube/kind
+    setups, configuring these fields is recommended.
 
     ### Recommended Namespaces
     - **OpenShift clusters**: Use **openshift-tuning** namespace

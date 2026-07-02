@@ -10,6 +10,12 @@ on:
     # Run weekly on Monday at 00:00 UTC
     - cron: '0 0 * * 1'
   workflow_dispatch: # Allow manual trigger
+    inputs:
+      base_branch:
+        description: 'Target branch for the pull request'
+        required: false
+        default: 'mvp_demo'
+        type: string
 
 permissions:
   contents: write
@@ -205,7 +211,7 @@ jobs:
           
           BRANCH_NAME="automated/bump-kruize-versions-${{ github.run_number }}-${{ github.run_attempt }}"
           REPO="${{ github.repository }}"
-          BASE_BRANCH="${{ github.ref_name }}"
+          BASE_BRANCH="${{ inputs.base_branch || 'mvp_demo' }}"
           
           # Get the SHA of the base branch
           BASE_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
@@ -357,7 +363,7 @@ jobs:
           
           REPO="${{ github.repository }}"
           BRANCH_NAME="${{ steps.create-branch.outputs.branch_name }}"
-          BASE_BRANCH="${{ github.ref_name }}"
+          BASE_BRANCH="${{ inputs.base_branch || 'mvp_demo' }}"
           
           PR_BODY="## Automated Version Update
 

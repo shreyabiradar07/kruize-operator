@@ -8,6 +8,11 @@ rules:
   - ""
   resources:
   - configmaps
+  - persistentvolumeclaims
+  - persistentvolumes
+  - pods
+  - serviceaccounts
+  - services
   verbs:
   - create
   - get
@@ -17,6 +22,8 @@ rules:
   - ""
   resources:
   - endpoints
+  - namespaces
+  - nodes
   verbs:
   - get
   - list
@@ -80,24 +87,6 @@ rules:
   - create
   - get
 - apiGroups:
-  - ""
-  resources:
-  - serviceaccounts
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - services
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-- apiGroups:
   - apiextensions.k8s.io
   resources:
   - customresourcedefinitions
@@ -109,23 +98,7 @@ rules:
   - apps
   resources:
   - daemonsets
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-- apiGroups:
-  - apps
-  resources:
   - deployments
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-- apiGroups:
-  - apps
-  resources:
   - statefulsets
   verbs:
   - create
@@ -148,27 +121,7 @@ rules:
   - autoscaling.k8s.io
   resources:
   - verticalpodautoscalercheckpoints
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - autoscaling.k8s.io
-  resources:
   - verticalpodautoscalers
-  verbs:
-  - create
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - autoscaling.k8s.io
-  resources:
   - verticalpodautoscalers/status
   verbs:
   - create
@@ -195,6 +148,7 @@ rules:
   - list
 - apiGroups:
   - extensions
+  - networking.k8s.io
   resources:
   - ingresses
   verbs:
@@ -253,13 +207,6 @@ rules:
   - monitoring.coreos.com
   resources:
   - alertmanagers
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - monitoring.coreos.com
-  resources:
   - prometheuses
   verbs:
   - get
@@ -283,14 +230,6 @@ rules:
   - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
-  verbs:
-  - get
-  - list
   - watch
 - apiGroups:
   - networking.k8s.io
@@ -324,6 +263,7 @@ rules:
 - apiGroups:
   - rbac.authorization.k8s.io
   resources:
+  - clusterroles
   - rolebindings
   verbs:
   - create
