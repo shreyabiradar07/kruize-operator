@@ -1,8 +1,8 @@
 module github.com/kruize/kruize-operator
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.25.9
+toolchain go1.26.4
 
 require (
 	github.com/onsi/ginkgo/v2 v2.25.3
