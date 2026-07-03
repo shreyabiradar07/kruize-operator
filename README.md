@@ -24,8 +24,8 @@ For examples of running Kruize and the operator, see [kruize-demos](https://gith
 - [Prometheus](https://github.com/prometheus/prometheus) (for Minikube, Kind clusters)
 
 **For Building/Development:**
-- Go version v1.25.0+ (updated for security patches)
-- [operator-sdk](https://github.com/operator-framework/operator-sdk) v1.37.0+ (as specified in Makefile)
+- Go version v1.26.0+ (updated for security patches)
+- [operator-sdk](https://github.com/operator-framework/operator-sdk) v1.42.3+ (as specified in Makefile)
 - Docker version 17.03+
 
 ### Configuration
