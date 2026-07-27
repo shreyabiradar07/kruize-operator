@@ -102,6 +102,13 @@ jobs:
             echo "Info: Installing prometheus setup"
             kubectl apply -f setup --server-side
           
+            echo "Info: Waiting for Prometheus CRDs to be established..."
+            kubectl wait \
+              --for=condition=Established \
+              --all \
+              --timeout=120s \
+              customresourcedefinitions.apiextensions.k8s.io
+
             echo "Info: Installing prometheus manifests"
             kubectl apply -f . --server-side
           
