@@ -28,17 +28,7 @@ If this is your first pull request on GitHub, click [here](https://www.freecodec
 
 ## Prerequisites
 
-Before contributing, ensure you have the following tools installed:
-
-**For Development:**
-- Go version v1.26.0+
-- [operator-sdk](https://github.com/operator-framework/operator-sdk) v1.42.3+
-- Docker 17.03+ or Podman
-
-**For Deployment and Testing:**
-- `kubectl` v1.23.0+
-- Access to a Kubernetes v1.23.0+ or OpenShift v4.12+ cluster
-- [Prometheus](https://github.com/prometheus/prometheus) (for Minikube/KIND clusters)
+See the [Prerequisites section in README.md](README.md#prerequisites) for the full list of required tools and versions.
 
 ---
 
