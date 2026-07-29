@@ -76,12 +76,22 @@ var _ = BeforeSuite(func() {
 	if binaryAssetsDir == "" {
 		systemDir, err := envtest.SetupEnvtestDefaultBinaryAssetsDirectory()
 		Expect(err).NotTo(HaveOccurred(),
-			"failed to resolve envtest system cache directory; "+
-				"run `make test` once to download envtest binaries for Kubernetes %s",
+			"failed to resolve envtest binary assets directory from system cache; "+
+				"run `make test` once to download envtest binaries for Kubernetes %s, "+
+				"or set KUBEBUILDER_ASSETS to the directory containing etcd and kube-apiserver",
 			envtestK8sVersion)
 		binaryAssetsDir = filepath.Join(systemDir,
 			fmt.Sprintf("%s-%s-%s", envtestK8sVersion, runtime.GOOS, runtime.GOARCH))
 	}
+
+	// Fail fast with a clear message if the resolved directory does not exist on disk.
+	// Without this, testEnv.Start() would fail with a vague "fork/exec etcd: no such file" error.
+	_, statErr := os.Stat(binaryAssetsDir)
+	Expect(statErr).NotTo(HaveOccurred(),
+		"envtest binary assets directory not found at %s; "+
+			"run `make test` once to download envtest binaries for Kubernetes %s, "+
+			"or set KUBEBUILDER_ASSETS to the directory containing etcd and kube-apiserver",
+		binaryAssetsDir, envtestK8sVersion)
 
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
