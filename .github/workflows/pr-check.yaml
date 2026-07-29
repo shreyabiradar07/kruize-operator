@@ -44,7 +44,9 @@ jobs:
           BIN_DIR="$(pwd)/bin"
           KUBEBUILDER_ASSETS="$(./bin/setup-envtest-release-0.19 use ${{ env.ENVTEST_K8S_VERSION }} --bin-dir "$BIN_DIR" -p path)"
           export KUBEBUILDER_ASSETS
-          go test ./internal/... -v -coverprofile=cover.out 2>&1 | tee /tmp/unit-test-output.log
+          go test ./internal/... -v -coverprofile=cover.out 2>&1 \
+            | sed -r 's/\x1b\[[0-9;]*[mGKHF]//g' \
+            | tee unit-test-output.log
           exit ${PIPESTATUS[0]}
 
       - name: Upload unit test results
@@ -54,7 +56,7 @@ jobs:
           name: unit-test-results-pr-${{ github.event.pull_request.number }}
           path: |
             cover.out
-            /tmp/unit-test-output.log
+            unit-test-output.log
           retention-days: 7
 
   # ── Job 2: E2E tests ─────────────────────────────────────────────────────────
