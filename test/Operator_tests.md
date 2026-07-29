@@ -69,12 +69,80 @@ go test ./internal/controller/... -v
 # Run with coverage
 go test ./internal/controller/... -v -coverprofile=coverage.out
 ```
+
 ## Running Unit Tests
+
+### Prerequisites
+
+The controller tests use [envtest](https://book.kubebuilder.io/reference/envtest.html), which starts a
+real `etcd` and `kube-apiserver` process locally. Those binaries **must be downloaded once** before
+`go test` can succeed.
+
+#### Option A — `make test` (fully automated, recommended for CI)
+
+`make test` handles everything: code generation, formatting, vetting, binary download, and test execution.
+
+```bash
+make test
+```
+
+No manual setup required — use this for a clean first run or in CI pipelines.
+
+#### Option B — `go test` directly (faster iteration during development)
+
+**Step 1 — Install `setup-envtest`** (only needed once per clone):
+
+```bash
+make envtest
+```
+
+This downloads and installs the `setup-envtest` tool itself into `bin/setup-envtest-release-0.19`.
+It does **not** download `etcd` or `kube-apiserver` — that happens in step 2.
+
+**Step 2 — Export the assets path and run tests:**
+
+```bash
+# ENVTEST_K8S_VERSION is defined in the Makefile (currently 1.31.0)
+export KUBEBUILDER_ASSETS="$(./bin/setup-envtest-release-0.19 use $(grep 'ENVTEST_K8S_VERSION' Makefile | head -1 | awk '{print $3}') --bin-dir "$(pwd)/bin" -p path)"
+go test ./internal/controller/... -v
+```
+
+Or with the version written out explicitly (check `ENVTEST_K8S_VERSION` in [`Makefile:56`](../Makefile) if this ever changes):
+
+```bash
+export KUBEBUILDER_ASSETS="$(./bin/setup-envtest-release-0.19 use 1.31.0 --bin-dir "$(pwd)/bin" -p path)"
+go test ./internal/controller/... -v
+```
+
+The `setup-envtest use` command downloads `etcd` and `kube-apiserver` for that specific Kubernetes version
+into `bin/k8s/1.31.0-<os>-<arch>/` on first run and reuses the cached binaries on subsequent runs.
+Only step 1 ever needs to be repeated (on a fresh clone).
+
+> **What is `1.31.0`?**
+> It is the Kubernetes control plane version whose test binaries are downloaded.
+> `setup-envtest` fetches the matching `etcd` and `kube-apiserver` builds from
+> `storage.googleapis.com/kubebuilder-tools` so the test suite can spin up a real
+> (but lightweight) API server in-process. The version is pinned in the Makefile as
+> `ENVTEST_K8S_VERSION = 1.31.0` and must match the fallback path hardcoded in
+> [`suite_test.go`](../internal/controller/suite_test.go).
+
+> **Why `KUBEBUILDER_ASSETS`?**
+> The test suite reads this env var first. If it is unset, it falls back to
+> `bin/k8s/1.31.0-<goos>-<goarch>/` — the same directory `setup-envtest` writes to.
+> Setting the env var explicitly is the safest approach as it works regardless of
+> working directory.
+
+#### What each step does
+
+| Step | Command | Purpose |
+|------|---------|---------|
+| Install tool | `make envtest` | Downloads and installs the `setup-envtest` CLI into `bin/` |
+| Export + run | `export KUBEBUILDER_ASSETS=…` | `setup-envtest use` downloads `etcd`+`kube-apiserver` on first run (cached after); `-p path` prints their location into the env var; `go test` then uses it |
 
 ### Basic Commands
 
 ```bash
-# Run all unit tests
+# Run all unit tests (after setup above)
 go test ./internal/controller/... -v
 
 # Run with coverage
@@ -83,10 +151,10 @@ go test ./internal/controller/... -v -coverprofile=coverage.out
 # View coverage report
 go tool cover -html=coverage.out
 
-# Run specific test
+# Run a specific test by name
 go test ./internal/controller/... -v -ginkgo.focus="should generate RBAC"
 
-# Run tests matching pattern
+# Run tests matching a pattern
 go test ./internal/controller/... -v -ginkgo.focus="OpenShift"
 ```
 
