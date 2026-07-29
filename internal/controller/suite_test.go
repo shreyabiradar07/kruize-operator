@@ -75,10 +75,12 @@ var _ = BeforeSuite(func() {
 	}
 	if binaryAssetsDir == "" {
 		systemDir, err := envtest.SetupEnvtestDefaultBinaryAssetsDirectory()
-		if err == nil {
-			binaryAssetsDir = filepath.Join(systemDir,
-				fmt.Sprintf("%s-%s-%s", envtestK8sVersion, runtime.GOOS, runtime.GOARCH))
-		}
+		Expect(err).NotTo(HaveOccurred(),
+			"failed to resolve envtest system cache directory; "+
+				"run `make test` once to download envtest binaries for Kubernetes %s",
+			envtestK8sVersion)
+		binaryAssetsDir = filepath.Join(systemDir,
+			fmt.Sprintf("%s-%s-%s", envtestK8sVersion, runtime.GOOS, runtime.GOARCH))
 	}
 
 	testEnv = &envtest.Environment{
